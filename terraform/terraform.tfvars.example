@@ -3,18 +3,20 @@ region = "REPLACE_REGION"
 network_names = ["REPLACE_PRIVATE_NETWORK"]
 ssh_key_name = "REPLACE_EXISTING_SSH_KEY"
 # Set TF_VAR_arvan_api_key via secret manager. Never commit credentials.
+# data_disk_size matches vm_data_disk_gb in vms/*/vars.yml (attached as the second disk, normally /dev/sdb).
+# Kerio and MSSQL stay manually installed; keep them disabled unless you choose to provision them here.
 # Disabled by default until approved flavors/images are confirmed.
 machines = {
   k8s-master01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
-  k8s-worker01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
-  k8s-worker02 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
-  k8s-worker03 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
-  haproxy01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
-  nfs01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
-  minio01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
-  monitoring01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
-  clickhouse01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
-  meilisearch01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
+  k8s-worker01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, data_disk_size = 50, security_groups = ["arDefault"], enabled = false }
+  k8s-worker02 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, data_disk_size = 50, security_groups = ["arDefault"], enabled = false }
+  k8s-worker03 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, data_disk_size = 50, security_groups = ["arDefault"], enabled = false }
+  haproxy01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, data_disk_size = 50, security_groups = ["arDefault"], enabled = false }
+  nfs01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, data_disk_size = 100, security_groups = ["arDefault"], enabled = false }
+  minio01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, data_disk_size = 100, security_groups = ["arDefault"], enabled = false }
+  monitoring01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, data_disk_size = 100, security_groups = ["arDefault"], enabled = false }
+  clickhouse01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, data_disk_size = 100, security_groups = ["arDefault"], enabled = false }
+  meilisearch01 = { flavor = "REPLACE_FLAVOR", image_type = "distributions", image_name = "REPLACE_IMAGE", disk_size = 30, data_disk_size = 100, security_groups = ["arDefault"], enabled = false }
   mssql01 = { flavor = "REPLACE_FLAVOR", image_type = "REPLACE_IMAGE_TYPE", image_name = "REPLACE_LICENSED_WINDOWS_IMAGE", disk_size = 100, security_groups = ["arDefault"], enabled = false }
   kerio01 = { flavor = "REPLACE_FLAVOR", image_type = "REPLACE_IMAGE_TYPE", image_name = "REPLACE_KERIO_IMAGE", disk_size = 30, security_groups = ["arDefault"], enabled = false }
 }

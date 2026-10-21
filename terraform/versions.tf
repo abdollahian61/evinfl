@@ -2,7 +2,7 @@ terraform {
   required_version = ">= 1.5.0"
   required_providers {
     arvan = {
-      source = "arvancloud/arvan"
+      source  = "arvancloud/arvan"
       version = "= 0.6.4"
     }
   }
