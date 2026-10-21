@@ -1,0 +1,6 @@
+# Example for /etc/cron.d/nfs-backup (includes the root user column).
+# 02:00 in the NFS server's configured timezone; the hour is a draft default.
+# Install the script and run a successful initial backup before enabling this.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 2 * * * root umask 077; /usr/local/sbin/nfs-to-minio.sh >> /var/log/nfs-backup.log 2>&1
