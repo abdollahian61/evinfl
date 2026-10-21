@@ -1,0 +1,9 @@
+# Terraform state and local credentials
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+!**/*.tfvars.example
+**/crash.log
+terraform-output.json
+generated-inventory/
