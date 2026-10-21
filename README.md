@@ -7,6 +7,7 @@ Infrastructure as Code and operational documentation for the EvinFL environment 
 | Document | Purpose |
 |---|---|
 | [Terraform provisioning](terraform/README.md) | ArvanCloud Terraform scaffold and dynamic inventory generation |
+| [Deployment documentation](docs/documentation.md) | End-to-end infrastructure setup and validation |
 | [Kubespray and Cilium](docs/kubespray-then-cilium.md) | Kubernetes installation followed by Helm and Cilium |
 | [Infrastructure specifications](docs/infrastructure.md) | VM sizing, private networking, and outstanding decisions |
 | [Per-VM instructions](vms/README.md) | Individual installation scripts, playbooks, and variables |
