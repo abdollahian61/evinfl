@@ -22,6 +22,6 @@ For a confirmed empty data disk, add an explicit JSON boolean:
 bash vms/monitoring01/install.sh -e '{"data_disk_allow_format": true}'
 ```
 
-Read [the complete runbook](../../docs/install-a-to-z.md) for prerequisites, execution order, secrets and checks.
+Read [the complete runbook](../../docs/documentation.md) for prerequisites, execution order, secrets and checks.
 
 Installs PostgreSQL, Zabbix 7.4, Grafana and the Zabbix datasource plugin. Prometheus remains in Kubernetes. PostgreSQL/Grafana data use the second disk. No CI/CD Runner is installed.
