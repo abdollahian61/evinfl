@@ -22,6 +22,6 @@ For a confirmed empty data disk, add an explicit JSON boolean:
 bash vms/haproxy01/install.sh -e '{"data_disk_allow_format": true}'
 ```
 
-Read [the complete runbook](../../docs/install-a-to-z.md) for prerequisites, execution order, secrets and checks.
+Read [the complete runbook](../../docs/documentation.md) for prerequisites, execution order, secrets and checks.
 
 Supply `private/haproxy.pem` containing the real certificate chain and key. Test-only self-signed mode is available via `haproxy_allow_self_signed: true`. The second disk stores rotated HAProxy logs.
