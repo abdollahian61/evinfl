@@ -1,37 +1,34 @@
-# evinfl
+# EvinFL Infrastructure
 
-مستندات، اسکریپت‌ها و تنظیمات زیرساخت روی ابر آروان.
+Infrastructure automation and deployment documentation for ArvanCloud.
 
-Playbook و اسکریپت مستقل هر Linux VM و راهنمای مرحله‌ای نصب اضافه شده است. فایل Visio پس از اعلام «final» تهیه می‌شود.
+## Guides
 
-برای نصب ساده با ترتیب «Kubespray بدون Cilium → نصب Helm → نصب Cilium»، از [راهنمای مرحله‌ای مخصوص Kubernetes](docs/kubespray-then-cilium.md) و [Inventory مینیمال](inventory/minimal/hosts.ini) استفاده کنید.
+- [End-to-end deployment guide](docs/install-a-to-z.md)
+- [Kubespray, Helm, and Cilium installation](docs/kubespray-then-cilium.md)
+- [Infrastructure specifications](docs/infrastructure.md)
+- [Per-VM installation instructions](vms/README.md)
+- [HAProxy operations](docs/haproxy.md)
+- [NFS backup and recovery](docs/nfs-backup.md)
 
-## فایل‌ها
+## Architecture
 
-| فایل | کاربرد |
-|---|---|
-| [راهنمای A تا Z](docs/install-a-to-z.md) | شبکه، دیسک، نصب و تست همه سرویس‌ها |
-| [فهرست فایل هر VM](vms/README.md) | نام، اسکریپت، Playbook و vars مستقل |
-| [cluster.yaml](cluster.yaml) | ورودی مستقیم Ansible برای نصب با Kubespray |
-| [نسخه‌های ثابت](config/versions.env) | نسخه Kubernetes و چارت‌ها |
-| [مشخصات زیرساخت](docs/infrastructure.md) | ماشین‌ها، شبکه، ترتیب نصب و موارد باز |
-| [کانفیگ HAProxy](config/haproxy/haproxy.cfg) | دریافت HTTPS و ارسال HTTP به NodePort ورکرها |
-| [راهنمای HAProxy](docs/haproxy.md) | نصب بسته، گواهی، بررسی تنظیمات و اجرای سرویس |
-| [اسکریپت بکاپ NFS](scripts/backup/nfs-to-minio.sh) | بکاپ کل پوشه داده NFS در MinIO با Restic |
-| [راهنمای بکاپ NFS](docs/nfs-backup.md) | تنظیمات، اجرا، cron و بازیابی |
-| [تنظیمات نمونه بکاپ](config/backup/nfs-backup.env.example) | مسیرها و محل جایگزینی Access Key |
-| [نمونه cron](config/cron/nfs-backup) | اجرای روزانه با کاربر root |
+- One Kubernetes control plane and three workers deployed with Kubespray.
+- Cilium installed using Helm with kube-proxy replacement.
+- Traefik Gateway API behind HAProxy.
+- Kerio provides VPN and outbound NAT for private VMs.
+- Zabbix and Grafana run on the management VM; Prometheus runs inside Kubernetes.
+- Velero and Restic back up Kubernetes resources and NFS data to MinIO.
 
-فایل‌های دارای رمز، کلید خصوصی، kubeconfig مدیریتی و لایسنس واقعی باید خارج از Git نگهداری شوند. نمونه‌های موجود فقط مقدار جایگزین دارند.
+## Configuration
 
-## تصمیم‌های اصلی
+- [Kubespray entrypoint](cluster.yaml)
+- [Version pins](config/versions.env)
+- [Ansible inventory](ansible/inventory.ini)
+- [Helm values](config/helm/)
 
-- Kubernetes با یک Control Plane و سه Worker، نصب با Kubespray.
-- Cilium پس از آماده‌سازی کلاستر، با Helm و جایگزینی kube-proxy نصب می‌شود.
-- Gateway API با کنترلر Traefik؛ ورودی از HAProxy به NodePort سرویس Traefik.
-- خاتمه TLS روی HAProxy و ارتباط HTTP در مسیر داخلی وب.
-- فقط Kerio و HAProxy دارای IP عمومی هستند؛ سایر ماشین‌ها از Kerio به اینترنت دسترسی می‌گیرند.
-- Zabbix و Grafana روی VM مانیتورینگ/مدیریت؛ Prometheus Stack داخل کلاستر؛ بدون Runner روی VM مدیریت.
-- بکاپ فعلی: منابع Kubernetes با Velero، و کل پوشه داده NFS با Restic؛ مقصد MinIO، روزانه با نگهداری ۱۴روزه.
+## Security and deployment status
 
-اسکریپت‌ها در محیط واقعی آروان اجرا نشده‌اند. IPهای خصوصی ثبت‌شده تصمیم‌های فعلی پروژه‌اند؛ دامنه، IP عمومی و برخی مسیرها هنوز نمونه هستند.
+Do not commit credentials, private keys, admin kubeconfigs, TLS secrets, or licenses. Infrastructure definitions and installation scripts require validation in the target ArvanCloud environment before production execution.
+
+The GitLab CI/CD workflow is designed for a self-hosted runner after the GitHub repository is transferred to GitLab. Provisioning and destructive operations must remain manually controlled.
