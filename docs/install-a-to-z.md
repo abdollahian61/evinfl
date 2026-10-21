@@ -1,8 +1,11 @@
-# راهنمای اجرای زیرساخت
+# Infrastructure Deployment Guide
 
-این راهنما از ماشین مدیریت `monitoring01` اجرا می‌شود؛ تمام Linuxها Ubuntu 24.04 هستند. فایل‌ها آماده اجرا و بررسی‌اند، اما نصب روی VMهای واقعی انجام نشده است. مشخصات سخت‌افزار در [جدول زیرساخت](infrastructure.md) و فایل مستقل هر ماشین در [فهرست VMها](../vms/README.md) قرار دارد. Kerio و SQL Server طبق تصمیم شما دستی نصب می‌شوند.
+> **Status:** Production-oriented deployment runbook. Commands and configuration examples must be validated against the target environment before execution.
 
-## ۱. شبکه و پیش‌نیاز
+
+This runbook is executed from the `monitoring01` management host. All Linux systems run Ubuntu 24.04. The repository is prepared for deployment and validation; however, no installation has been performed on the production VMs. Hardware specifications are documented in the [infrastructure matrix](infrastructure.md), with per-VM details available in the [VM inventory](../vms/README.md). Kerio Control and SQL Server are intentionally installed and managed manually.
+
+## 1. Network and Prerequisites
 
 در آروان ابتدا شبکه خصوصی، NICها، قوانین امنیتی و مسیر برگشت را تنظیم کنید. تنها Kerio `.4` و HAProxy `.5` IP عمومی دارند. VMهای خصوصی باید از Kerio NAT بگیرند. CIDR واقعی subnet، رنج VPN، DNS و IPهای عمومی هنوز مقدار قطعی ندارند؛ این مخزن عمداً netplan و route سرورها را تغییر نمی‌دهد. قابلیت forwarding و محدودیت anti-spoofing/port-security شبکه ابری را با آروان تطبیق دهید.
 
@@ -30,7 +33,7 @@ Kerio را با VPN برای ۱۰ اتصال هم‌زمان، route شبکه د
 
 سیاست کلاستر می‌تواند ارتباط Podها را محدود کند؛ برای DNS، API، دیتابیس و S3 باید اجازه صریح باقی بماند. NodePort ممکن است از همه NICهای نود قابل‌دسترسی باشد؛ محدودیت مبدأ 30080 و 30900 را در فایروال آروان اعمال کنید. سرویس‌ها، Pod CIDR `10.244.0.0/16` و Service CIDR `10.96.0.0/16` نباید با LAN/VPN هم‌پوشانی داشته باشند. MTU Cilium خودکار است؛ تست عبور بسته‌های بزرگ روی شبکه آروان لازم است.
 
-## ۲. آماده‌سازی ماشین مدیریت
+## 2. Management Host Preparation
 
 روی monitoring01 با کاربر devops:
 
@@ -49,7 +52,7 @@ source private/site.env
 
 تمام دستورهای بعد از ریشه همین مخزن اجرا می‌شوند. از فایل‌های private بکاپ امن بگیرید. Ansible Vault اختیاری است و با `--ask-vault-pass` قابل استفاده است.
 
-## ۳. دیسک‌ها و Playbook هر VM
+## 3. Storage and Per-VM Playbooks
 
 این Roleها برای نصب تازه طراحی شده‌اند. قبل از هر اجرا از کنسول و `lsblk -f` بررسی کنید `/dev/sdb` همان دیسک دوم خالی است. مسیر در `vms/NAME/vars.yml` قابل تغییر است. فرمت خودکار پیش‌فرض خاموش است؛ تنها برای دیسک واقعاً خالی `-e data_disk_allow_format=true` بدهید. دیسک OS، پارتیشن‌دار، filesystem متفاوت یا داده موجود در مقصد bind mount رد می‌شود. مهاجرت داده موجود در این نسخه خودکار نیست. نصب بسته‌ها به‌تنهایی disk partition ایجاد نمی‌کند؛ کل sdb فرمت می‌شود.
 
@@ -80,7 +83,7 @@ export ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg"
 
 `ansible/site.yml` هر ده ماشین Linux را نصب می‌کند، ولی برای اولین اجرا روش مرحله‌ای بالا مناسب‌تر است. نقش base نام میزبان، ساعت، hosts و بسته‌های پایه را تنظیم می‌کند؛ نقش برنامه unit و config سرویس را ایجاد می‌کند. منابع CPU/RAM در vars برای مستندسازی‌اند و VM ابری را ایجاد یا resize نمی‌کنند.
 
-## ۴. MinIO و دسترسی بکاپ
+## 4. MinIO and Backup Access
 
 AIStor تجاری تک‌نود با آخرین binary پایدار و checksum رسمی در اولین نصب نصب می‌شود؛ اجرای دوباره آن را خودکار ارتقا نمی‌دهد. نسخه نصب‌شده در سرور ثبت می‌شود. لایسنس را باید خودتان از MinIO تهیه و فایل معتبر بدهید؛ خرید یا صدور لایسنس در این پروژه انجام نشده است. داده‌ها `/srv/minio/data` و endpoint خصوصی `http://192.168.1.28:9000` است؛ Console از VPN روی `http://192.168.1.28:9001` باز می‌شود. استفاده از HTTP داخلی در این تنظیم فعلی رمزنگاری انتقال S3 ندارد؛ برای داده حساس می‌توان بعداً TLS داخلی و trust chain را یکپارچه فعال کرد.
 
@@ -96,7 +99,7 @@ aws_secret_access_key = REPLACE_WITH_VELERO_SECRET
 
 کلید NFS و رمز repository را در `private/secrets.yml` تنظیم کنید. ابتدا ظرفیت واقعی بکاپ را بسنجید؛ ۱۰۰GB ممکن است برای NFS پر و تاریخچه ۱۴روزه کافی نباشد.
 
-## ۵. Kubernetes با Kubespray، سپس Cilium
+## 5. Kubernetes with Kubespray and Cilium
 
 فایل ورودی نصب [cluster.yaml](../cluster.yaml) در ریشه پروژه است و Playbook رسمی Kubespray را import می‌کند. بعد از bootstrap و آماده‌سازی چهار VM، برای اجرای مستقیم از ریشه مخزن:
 
@@ -140,7 +143,7 @@ kubectl -n kube-system exec ds/cilium -- cilium-dbg status --verbose
 
 Cilium با Helm، VXLAN، IPAM مبتنی بر Node PodCIDR، masquerade و kube-proxy replacement نصب می‌شود. Cilium Gateway خاموش است چون کنترلر Gateway این طرح Traefik است. Hubble Relay/UI خصوصی فعال‌اند؛ دسترسی از طریق port-forward با kubeconfig مدیریتی است. Workerها containerd و kubelet را روی sdb نگه می‌دارند؛ mount failure باید سرویس‌های وابسته را متوقف کند.
 
-## ۶. NFS و PVC
+## 6. NFS and Persistent Volumes
 
 ```bash
 bash scripts/install-addons.sh storage
@@ -151,7 +154,7 @@ kubectl -n storage-test logs job/nfs-smoke
 
 درایور `nfs.csi.k8s.io` و StorageClass پیش‌فرض `nfs-client`، زیرپوشه مجزا برای PVC می‌سازند. export فقط IP سه Worker را با NFSv4 و root_squash قبول می‌کند؛ روی master workload/PVC اجرا نکنید. حذف PVC با reclaimPolicy=Retain داده را حذف نمی‌کند؛ آزادسازی PV و پوشه قدیمی دستی است. export برای سازگاری با UIDهای متفاوت برنامه‌ها پوشه‌های قابل‌نوشتن دارد؛ NFS مرز امنیتی جداگانه بین مستأجرهای نامطمئن نیست.
 
-## ۷. Gateway API، Traefik و HAProxy
+## 7. Gateway API, Traefik, and HAProxy
 
 در `manifests/gateway-demo.yaml` دامنه `app.example.com` را واقعی کنید و DNS دامنه را به IP عمومی HAProxy بدهید. مقدار APP_DOMAIN در site.env به‌تنهایی manifest را بازنویسی نمی‌کند. سپس:
 
@@ -170,7 +173,7 @@ curl --resolve app.example.com:443:PUBLIC_HAPROXY_IP https://app.example.com/
 
 پاسخ باید اطلاعات Pod دموی whoami باشد. `PUBLIC_HAPROXY_IP` را جایگزین کنید. گواهی باید برای دامنه معتبر باشد؛ در حالت تست self-signed فقط آزمایش را با `-k` انجام دهید. برای برنامه واقعی Service از نوع ClusterIP و HTTPRoute به همان Gateway بسازید؛ namespace باید label `gateway-access=enabled` داشته باشد. پس از تست، namespace دموی `demo` را می‌توانید حذف کنید.
 
-## ۸. Metrics Server و Prometheus
+## 8. Metrics Server and Prometheus
 
 ```bash
 bash scripts/install-addons.sh metrics
@@ -184,7 +187,7 @@ Kubespray برای kubelet serving certificate، CSR rotation و approver را �
 
 Prometheus محلی روی NFS پشتیبانی نمی‌شود؛ به همین دلیل دو Local PV روی sdb Worker01 ساخته می‌شود: Prometheus 10GiB با retention هفت‌روز و سقف 6GB، Alertmanager 2GiB. این فضا با containerd/kubelet روی دیسک ۵۰GB مشترک است و اندازه PV quota filesystem نیست. فضای خالی و DiskPressure را پایش کنید. خرابی Worker01 متریک‌ها را قطع می‌کند؛ این طراحی برای یک replica است. local PVها تحت بکاپ NFS قرار نمی‌گیرند. Grafana بیرونی به `http://192.168.1.21:30900` متصل است و این NodePort فقط از monitoring01 مجاز باشد. مانیتورهای etcd، scheduler، controller-manager و kube-proxy که endpoint قابل‌scrape ندارند غیرفعال‌اند؛ پوشش پایه شامل node-exporter، kubelet، kube-state-metrics و API است.
 
-## ۹. Zabbix، Grafana و مدیریت
+## 9. Zabbix, Grafana, and Operations
 
 روی VPN:
 
@@ -203,7 +206,7 @@ export ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg"
 
 در Zabbix برای هر Linux یک Host با نام دقیق inventory و IP خصوصی بسازید و template `Linux by Zabbix agent` بدهید. این Role agent passive نصب می‌کند؛ ثبت host/template را خودکار انجام نمی‌دهد. فقط `.30` به TCP10050 دسترسی داشته باشد؛ PSK در این نسخه تنظیم نشده است. برای Windows، agent2 و دسترسی SQL متناسب با تنظیم خودتان را دستی اضافه کنید. برای Kerio از template/SNMP در صورت پشتیبانی همان نسخه استفاده کنید. templateهای HTTP/TCP برای سلامت MinIO، ClickHouse و Meilisearch و فضای دیسک/وضعیت بکاپ اضافه کنید. هیچ Runner روی monitoring نصب نمی‌شود.
 
-## ۱۰. بکاپ Velero و کل NFS
+## 10. Velero and NFS Backup
 
 ```bash
 bash scripts/install-addons.sh velero
@@ -259,7 +262,7 @@ spec:
 
 این دستور فایل volume را برنمی‌گرداند. آزمون restore در namespace/محیط جدا و تطبیق یک فایل آزمایشی با hash، شرط پذیرش بکاپ است. رمز Restic و کلیدهای S3 باید خارج از همین MinIO نیز محفوظ باشند. MinIO تک‌نود و یک دیسک، کپی مستقل خارج از این زیرساخت نیست.
 
-## ۱۱. سرویس‌های داده و کنترل سلامت
+## 11. Data Services and Health Validation
 
 ClickHouse روی .42، مسیر `/var/lib/clickhouse` و user برنامه با رمز hash‌شده برای سه Worker و monitoring مجاز است؛ default فقط loopback. Meilisearch روی .43:7700 در production و master key حداقل ۳۲ کاراکتری نصب می‌شود. master key را به frontend ندهید؛ کلید محدود برنامه ایجاد کنید. SQL 2019 Standard روی Windows 2025 طبق تصمیم شما دستی است؛ این مخزن نصب یا تغییر SQL را انجام نمی‌دهد. Playbookهای verify برای Kerio/SQL فقط اتصال TCP را بررسی می‌کنند و سلامت کامل محصول را اثبات نمی‌کنند.
 
@@ -272,13 +275,13 @@ ssh devops@192.168.1.24 'sudo exportfs -v; findmnt /srv/nfs'
 
 دسترسی منفی NFS از monitoring و مثبت از Worker را نیز بررسی کنید. روی VMهای خصوصی `ip route`, `resolvectl status` و خروج HTTPS به یک registry مجاز را بررسی کنید. از بیرون فقط HTTPS و VPN باید طبق سیاست دسترس‌پذیر باشند.
 
-## ۱۲. نگهداری و بازیابی Control Plane
+## 12. Control Plane Maintenance and Recovery
 
 این کلاستر یک master دارد؛ خرابی آن API/etcd را از دسترس خارج می‌کند. Velero جای snapshot etcd و کلیدهای control plane را نمی‌گیرد. Kubespray قبل از upgrade برای etcd backup می‌سازد؛ زمان‌بندی مستقل snapshot و نگهداری رمزنگاری‌شده certها/kubeconfigها باید جدا از MinIO تک‌نود طراحی شود. روش رسمی [بکاپ و بازیابی etcd](https://kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/) را برای همین نسخه دنبال کنید و restore را روی ماشین آزمایشی انجام دهید. این مخزن cron خودکار etcd را نصب نمی‌کند؛ فعلاً scope اجرایی بکاپ منابع Velero و فایل NFS است.
 
 قبل از هر upgrade: نسخه‌های pinned را مقایسه، snapshot/بکاپ قابل‌بازیابی تهیه، release notes را مطالعه و ابتدا در محیط آزمایشی نصب کنید. ارتقای binary MinIO، schema Zabbix و نسخه Meilisearch نیازمند برنامه جداست؛ نصب مجدد Playbook معادل برنامه upgrade تضمین‌شده نیست.
 
-## اعتبارسنجی و منابع
+## Validation and References
 
 `scripts/validate.py` syntax Bash/YAML، انسجام نسخه‌ها و Playbookها را بررسی می‌کند. شش chart pinned با Helm template رندر شده‌اند. این آزمون‌ها جای اتصال به VM، تست شبکه آروان یا restore واقعی را نمی‌گیرند. pipeline GitLab فقط validation انجام می‌دهد و چیزی deploy نمی‌کند.
 
@@ -292,4 +295,4 @@ ssh devops@192.168.1.24 'sudo exportfs -v; findmnt /srv/nfs'
 
 طرح Visio قابل‌ویرایش پس از اعلام «final» تهیه می‌شود.
 
-ورودی cluster.yaml از قابلیت رسمی [import_playbook](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/import_playbook_module.html) استفاده می‌کند.
+The `cluster.yaml` entry point uses Ansible's official [import_playbook](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/import_playbook_module.html) mechanism.
