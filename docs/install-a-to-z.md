@@ -101,6 +101,8 @@ aws_secret_access_key = REPLACE_WITH_VELERO_SECRET
 
 ## 5. Kubernetes with Kubespray and Cilium
 
+برای ترتیب جدید و مستقل «اول کلاستر بدون CNI، سپس نصب Helm، سپس Cilium»، [راهنمای مینیمال](kubespray-then-cilium.md) را دنبال کنید. این بخش مسیر قبلی با bootstrap کامل و CSR approver فعال را مستند می‌کند. اگر از Inventory مینیمال استفاده کردید، پیش از Metrics Server، تأیید معتبر kubelet serving CSRها یا نصب approver لازم است.
+
 فایل ورودی نصب [cluster.yaml](../cluster.yaml) در ریشه پروژه است و Playbook رسمی Kubespray را import می‌کند. بعد از bootstrap و آماده‌سازی چهار VM، برای اجرای مستقیم از ریشه مخزن:
 
 ```bash

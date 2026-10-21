@@ -33,8 +33,9 @@ if args.ansible:
                            ANSIBLE_CONFIG=str(Path(kubespray) / 'ansible.cfg'),
                            ANSIBLE_ROLES_PATH=str(Path(kubespray) / 'roles'),
                            ANSIBLE_LIBRARY=str(Path(kubespray) / 'library'))
-        subprocess.run([cli, '-i', str(root / 'inventory/hosts.ini'), '--syntax-check', str(root / 'cluster.yaml')],
-                       env=cluster_env, cwd=root, check=True)
+        for inventory in ['inventory/hosts.ini', 'inventory/minimal/hosts.ini']:
+            subprocess.run([cli, '-i', str(root / inventory), '--syntax-check', str(root / 'cluster.yaml')],
+                           env=cluster_env, cwd=root, check=True)
     else:
         print('SKIP: Kubespray import syntax check; set KUBESPRAY_DIR to the pinned checkout to enable it.')
 print(f'PASS: {len(files)} files checked; Bash, YAML and version consistency. No deployment performed.')

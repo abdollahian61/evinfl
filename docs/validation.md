@@ -16,3 +16,15 @@ Not validated against live servers: Arvan routing/security groups/MTU, blank dis
 ## cluster.yaml entry point
 
 The root cluster.yaml import was syntax-checked from the project directory with the pinned Kubespray checkout, inventory, roles and library paths. The installation script now uses this same entry point; inspection/check modes exit before retrieving credentials. No managed host was contacted.
+
+## Minimal Kubespray → Helm → Cilium flow
+
+- Added inventory/minimal/hosts.ini with one control-plane/etcd host and three workers. ansible-inventory verified that generic CNI, kube-proxy removal, disabled Helm and disabled CSR approver are applied to all four hosts.
+- cluster.yaml syntax-check passed with both existing and minimal inventories against Kubespray v2.32.0.
+- Bash/YAML checks passed, including the bootstrap --ansible-only option and standalone Helm installer. The Helm installer was executed locally: checksum passed and Helm v3.22.0 was installed in the local tools directory.
+- Updated Cilium 1.20.3 values passed Helm lint and template with Kubernetes 1.36.4 (37 resources). Rendered resources verified two Operator replicas, hostNetwork, required anti-affinity, maxUnavailable=1 PDB, kube-proxy replacement, Kubernetes IPAM, VXLAN/SNAT and ClusterIP Hubble services.
+- Added a removable smoke-test namespace with three-worker HTTP DaemonSet, ClusterIP Service and a client for DNS/Service/cross-node checks. YAML was parsed; no live test cluster exists in this session.
+
+The guide includes individually reviewed kubelet serving CSR approval before exec/log checks: Kubespray enables API-server kubelet CA validation when serving certificate rotation is enabled. No bulk CSR approval is automated.
+
+No user VM deployment, Arvan network validation or runtime connectivity test was performed.

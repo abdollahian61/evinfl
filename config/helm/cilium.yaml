@@ -1,3 +1,6 @@
+# Baseline for this four-node private-cloud cluster; size from real metrics.
+# Pin the chart via config/versions.env. Keep all image digest defaults.
+# Traefik will provide Gateway API later. Hubble services remain private.
 kubeProxyReplacement: true
 k8sServiceHost: 192.168.1.10
 k8sServicePort: 6443
@@ -15,9 +18,17 @@ ipv6:
 bpf:
   masquerade: true
 operator:
-  replicas: 1
+  replicas: 2
   hostNetwork: true
-# Traefik implements Gateway API in this design.
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
 gatewayAPI:
   enabled: false
 ingressController:
@@ -26,5 +37,33 @@ hubble:
   enabled: true
   relay:
     enabled: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
   ui:
     enabled: true
+    backend:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
+    frontend:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+loadBalancer:
+  mode: snat

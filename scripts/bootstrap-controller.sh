@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+MODE=${1:---all}
+[[ $# -le 1 ]] || { echo 'Usage: bootstrap-controller.sh [--all|--ansible-only]' >&2; exit 1; }
+case "$MODE" in --all|--ansible-only) ;; *) echo 'Usage: bootstrap-controller.sh [--all|--ansible-only]' >&2; exit 1 ;; esac
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 source "$ROOT_DIR/config/versions.env"
 mkdir -p "$ROOT_DIR/private" "$ROOT_DIR/.tools/bin"
@@ -21,6 +24,10 @@ fi
 [[ "$(git -C "$KUBESPRAY_DIR" rev-parse HEAD)" == "$(git -C "$KUBESPRAY_DIR" rev-parse "$KUBESPRAY_VERSION^{commit}")" ]] || { echo 'Kubespray checkout differs from the pinned release.' >&2; exit 1; }
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/python" -m pip install -r "$KUBESPRAY_DIR/requirements.txt"
+if [[ "$MODE" == --ansible-only ]]; then
+    printf '%s\n' 'Ansible and pinned Kubespray installed. Helm has not been installed by this command.'
+    exit 0
+fi
 case "$(uname -m)" in
     x86_64) ARCH=amd64 ;;
     aarch64) ARCH=arm64 ;;

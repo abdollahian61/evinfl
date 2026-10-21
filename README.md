@@ -4,6 +4,8 @@
 
 Playbook و اسکریپت مستقل هر Linux VM و راهنمای مرحله‌ای نصب اضافه شده است. فایل Visio پس از اعلام «final» تهیه می‌شود.
 
+برای نصب ساده با ترتیب «Kubespray بدون Cilium → نصب Helm → نصب Cilium»، از [راهنمای مرحله‌ای مخصوص Kubernetes](docs/kubespray-then-cilium.md) و [Inventory مینیمال](inventory/minimal/hosts.ini) استفاده کنید.
+
 ## فایل‌ها
 
 | فایل | کاربرد |
