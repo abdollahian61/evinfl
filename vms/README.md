@@ -1,8 +1,8 @@
-# فایل‌های مستقل هر VM
+# Per-VM Installation Files
 
-تمام install.shها از ماشین مدیریت اجرا می‌شوند و Playbook مستقل همان پوشه را صدا می‌زنند. [ترتیب کامل نصب](../docs/install-a-to-z.md) را دنبال کنید.
+Run every `install.sh` from the management host. Each wrapper invokes the independent Ansible playbook in its own directory. Follow the [complete installation guide](../docs/documentation.md).
 
-| VM | IP | اسکریپت | Ansible | تنظیمات |
+| VM | IP | Script | Ansible | Variables |
 |---|---|---|---|---|
 | [clickhouse01](clickhouse01/README.md) | 192.168.1.42 | [`install.sh`](clickhouse01/install.sh) | [`install.yml`](clickhouse01/install.yml) | [`vars.yml`](clickhouse01/vars.yml) |
 | [haproxy01](haproxy01/README.md) | 192.168.1.5 | [`install.sh`](haproxy01/install.sh) | [`install.yml`](haproxy01/install.yml) | [`vars.yml`](haproxy01/vars.yml) |
@@ -15,9 +15,9 @@
 | [monitoring01](monitoring01/README.md) | 192.168.1.30 | [`install.sh`](monitoring01/install.sh) | [`install.yml`](monitoring01/install.yml) | [`vars.yml`](monitoring01/vars.yml) |
 | [nfs01](nfs01/README.md) | 192.168.1.24 | [`install.sh`](nfs01/install.sh) | [`install.yml`](nfs01/install.yml) | [`vars.yml`](nfs01/vars.yml) |
 
-| نصب دستی طبق تصمیم شما | IP | بررسی اتصال |
+| Manually Installed VM | IP | Connectivity Check |
 |---|---|---|
 | [kerio01](kerio01/README.md) | 192.168.1.4 | [verify.yml](kerio01/verify.yml) |
 | [mssql01](mssql01/README.md) | 192.168.1.40 | [verify.yml](mssql01/verify.yml) |
 
-نصب واقعی Kubernetes پس از آماده‌سازی چهار VM با [install-kubernetes.sh](../scripts/install-kubernetes.sh) انجام می‌شود؛ سپس [install-addons.sh](../scripts/install-addons.sh) ابزارهای داخل کلاستر را نصب می‌کند.
+After preparing the four Kubernetes VMs, deploy the cluster with [install-kubernetes.sh](../scripts/install-kubernetes.sh), then deploy in-cluster components with [install-addons.sh](../scripts/install-addons.sh).
