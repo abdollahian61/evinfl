@@ -1,37 +1,33 @@
-# evinfl
+# EvinFL Infrastructure
 
-مستندات، اسکریپت‌ها و تنظیمات زیرساخت روی ابر آروان.
+Infrastructure automation, configuration, and operational runbooks for the EvinFL deployment on ArvanCloud.
 
-Playbook و اسکریپت مستقل هر Linux VM و راهنمای مرحله‌ای نصب اضافه شده است. فایل Visio پس از اعلام «final» تهیه می‌شود.
+## Documentation
 
-برای نصب ساده با ترتیب «Kubespray بدون Cilium → نصب Helm → نصب Cilium»، از [راهنمای مرحله‌ای مخصوص Kubernetes](docs/kubespray-then-cilium.md) و [Inventory مینیمال](inventory/minimal/hosts.ini) استفاده کنید.
-
-## فایل‌ها
-
-| فایل | کاربرد |
+| Resource | Description |
 |---|---|
-| [راهنمای A تا Z](docs/install-a-to-z.md) | شبکه، دیسک، نصب و تست همه سرویس‌ها |
-| [فهرست فایل هر VM](vms/README.md) | نام، اسکریپت، Playbook و vars مستقل |
-| [cluster.yaml](cluster.yaml) | ورودی مستقیم Ansible برای نصب با Kubespray |
-| [نسخه‌های ثابت](config/versions.env) | نسخه Kubernetes و چارت‌ها |
-| [مشخصات زیرساخت](docs/infrastructure.md) | ماشین‌ها، شبکه، ترتیب نصب و موارد باز |
-| [کانفیگ HAProxy](config/haproxy/haproxy.cfg) | دریافت HTTPS و ارسال HTTP به NodePort ورکرها |
-| [راهنمای HAProxy](docs/haproxy.md) | نصب بسته، گواهی، بررسی تنظیمات و اجرای سرویس |
-| [اسکریپت بکاپ NFS](scripts/backup/nfs-to-minio.sh) | بکاپ کل پوشه داده NFS در MinIO با Restic |
-| [راهنمای بکاپ NFS](docs/nfs-backup.md) | تنظیمات، اجرا، cron و بازیابی |
-| [تنظیمات نمونه بکاپ](config/backup/nfs-backup.env.example) | مسیرها و محل جایگزینی Access Key |
-| [نمونه cron](config/cron/nfs-backup) | اجرای روزانه با کاربر root |
+| [Deployment guide](docs/install-a-to-z.md) | End-to-end infrastructure installation and verification |
+| [Kubernetes deployment](docs/kubespray-then-cilium.md) | Kubespray cluster installation, followed by Helm and Cilium |
+| [Infrastructure inventory](docs/infrastructure.md) | Planned virtual machines, networking, and open decisions |
+| [Per-VM instructions](vms/README.md) | Installation scripts, Ansible playbooks, and variables |
+| [Kubespray entrypoint](cluster.yaml) | Cluster installation playbook |
+| [Version pins](config/versions.env) | Kubernetes and Helm component versions |
+| [HAProxy operations](docs/haproxy.md) | TLS configuration and service verification |
+| [NFS backup](docs/nfs-backup.md) | Restic backup to MinIO and recovery procedures |
 
-فایل‌های دارای رمز، کلید خصوصی، kubeconfig مدیریتی و لایسنس واقعی باید خارج از Git نگهداری شوند. نمونه‌های موجود فقط مقدار جایگزین دارند.
+## Architecture
 
-## تصمیم‌های اصلی
+- One Kubernetes control-plane node and three worker nodes, deployed with Kubespray.
+- Cilium installed with Helm, with kube-proxy replacement enabled.
+- Traefik Gateway API for HTTP routing, behind a public HAProxy endpoint.
+- Only Kerio and HAProxy have public IP addresses; private hosts use Kerio for outbound NAT.
+- Zabbix and Grafana on the management VM; Prometheus inside Kubernetes.
+- Velero for Kubernetes resources and Restic for NFS data, targeting MinIO with a planned 14-day retention policy.
 
-- Kubernetes با یک Control Plane و سه Worker، نصب با Kubespray.
-- Cilium پس از آماده‌سازی کلاستر، با Helm و جایگزینی kube-proxy نصب می‌شود.
-- Gateway API با کنترلر Traefik؛ ورودی از HAProxy به NodePort سرویس Traefik.
-- خاتمه TLS روی HAProxy و ارتباط HTTP در مسیر داخلی وب.
-- فقط Kerio و HAProxy دارای IP عمومی هستند؛ سایر ماشین‌ها از Kerio به اینترنت دسترسی می‌گیرند.
-- Zabbix و Grafana روی VM مانیتورینگ/مدیریت؛ Prometheus Stack داخل کلاستر؛ بدون Runner روی VM مدیریت.
-- بکاپ فعلی: منابع Kubernetes با Velero، و کل پوشه داده NFS با Restic؛ مقصد MinIO، روزانه با نگهداری ۱۴روزه.
+## Deployment status
 
-اسکریپت‌ها در محیط واقعی آروان اجرا نشده‌اند. IPهای خصوصی ثبت‌شده تصمیم‌های فعلی پروژه‌اند؛ دامنه، IP عمومی و برخی مسیرها هنوز نمونه هستند.
+Configuration is not proof of successful deployment. ArvanCloud provisioning, networking, Kubernetes installation, and backups require validation in the target environment. Never commit production credentials, SSH keys, admin kubeconfigs, certificates, or licenses.
+
+## CI/CD
+
+The GitLab pipeline is intended to run on a self-hosted GitLab Runner after the repository is imported from GitHub. Provisioning and destructive operations must be explicitly approved and tested before production use.
