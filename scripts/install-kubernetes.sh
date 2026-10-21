@@ -10,10 +10,15 @@ VENV_DIR=${VENV_DIR:-$ROOT_DIR/.tools/ansible-venv}
 [[ "$(git -C "$KUBESPRAY_DIR" rev-parse HEAD)" == "$(git -C "$KUBESPRAY_DIR" rev-parse "$KUBESPRAY_VERSION^{commit}")" ]] || { echo 'Kubespray version mismatch.' >&2; exit 1; }
 (
     cd "$KUBESPRAY_DIR"
+    export KUBESPRAY_DIR
     export ANSIBLE_CONFIG="$KUBESPRAY_DIR/ansible.cfg"
     "$VENV_DIR/bin/ansible-playbook" -i "$ROOT_DIR/inventory/hosts.ini" \
-        -u "$SSH_USER" --private-key "$SSH_KEY" -b cluster.yml "$@"
+        -u "$SSH_USER" --private-key "$SSH_KEY" -b "$ROOT_DIR/cluster.yaml" "$@"
 )
+# Inspection modes must not fetch credentials or report a deployment.
+for arg in "$@"; do
+    case "$arg" in --syntax-check|--list-tasks|--list-tags|--list-hosts|--check|-C) exit 0 ;; esac
+done
 # Never replace the operator's default ~/.kube/config.
 tmp_config=$(mktemp "$ROOT_DIR/private/admin.conf.XXXXXX")
 trap 'rm -f "$tmp_config"' EXIT

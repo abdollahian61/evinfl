@@ -1,0 +1,5 @@
+---
+# Run after scripts/bootstrap-controller.sh; export KUBESPRAY_DIR first.
+# Inventory/group_vars configure this cluster; upstream Kubespray installs it.
+- name: Install the Evinfl Kubernetes cluster with Kubespray
+  ansible.builtin.import_playbook: "{{ lookup('ansible.builtin.env', 'KUBESPRAY_DIR', default=undef()) }}/cluster.yml"

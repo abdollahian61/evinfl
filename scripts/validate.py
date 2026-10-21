@@ -26,4 +26,15 @@ if args.ansible:
     env = dict(os.environ, ANSIBLE_CONFIG=str(root / 'ansible/ansible.cfg'))
     for playbook in ['ansible/site.yml', 'ansible/playbooks/addons.yml', 'ansible/playbooks/agents.yml', 'vms/kerio01/verify.yml', 'vms/mssql01/verify.yml']:
         subprocess.run([cli, '-i', str(root / 'ansible/inventory.ini'), '--syntax-check', str(root / playbook)], env=env, cwd=root, check=True)
+    kubespray = os.environ.get('KUBESPRAY_DIR')
+    if kubespray:
+        kubespray = str(Path(kubespray).resolve())
+        cluster_env = dict(env, KUBESPRAY_DIR=kubespray,
+                           ANSIBLE_CONFIG=str(Path(kubespray) / 'ansible.cfg'),
+                           ANSIBLE_ROLES_PATH=str(Path(kubespray) / 'roles'),
+                           ANSIBLE_LIBRARY=str(Path(kubespray) / 'library'))
+        subprocess.run([cli, '-i', str(root / 'inventory/hosts.ini'), '--syntax-check', str(root / 'cluster.yaml')],
+                       env=cluster_env, cwd=root, check=True)
+    else:
+        print('SKIP: Kubespray import syntax check; set KUBESPRAY_DIR to the pinned checkout to enable it.')
 print(f'PASS: {len(files)} files checked; Bash, YAML and version consistency. No deployment performed.')

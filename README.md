@@ -10,6 +10,7 @@ Playbook و اسکریپت مستقل هر Linux VM و راهنمای مرحله
 |---|---|
 | [راهنمای A تا Z](docs/install-a-to-z.md) | شبکه، دیسک، نصب و تست همه سرویس‌ها |
 | [فهرست فایل هر VM](vms/README.md) | نام، اسکریپت، Playbook و vars مستقل |
+| [cluster.yaml](cluster.yaml) | ورودی مستقیم Ansible برای نصب با Kubespray |
 | [نسخه‌های ثابت](config/versions.env) | نسخه Kubernetes و چارت‌ها |
 | [مشخصات زیرساخت](docs/infrastructure.md) | ماشین‌ها، شبکه، ترتیب نصب و موارد باز |
 | [کانفیگ HAProxy](config/haproxy/haproxy.cfg) | دریافت HTTPS و ارسال HTTP به NodePort ورکرها |

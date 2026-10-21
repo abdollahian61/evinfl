@@ -98,6 +98,31 @@ aws_secret_access_key = REPLACE_WITH_VELERO_SECRET
 
 ## ۵. Kubernetes با Kubespray، سپس Cilium
 
+فایل ورودی نصب [cluster.yaml](../cluster.yaml) در ریشه پروژه است و Playbook رسمی Kubespray را import می‌کند. بعد از bootstrap و آماده‌سازی چهار VM، برای اجرای مستقیم از ریشه مخزن:
+
+```bash
+source private/site.env
+export KUBESPRAY_DIR
+export ANSIBLE_CONFIG="$KUBESPRAY_DIR/ansible.cfg"
+export ANSIBLE_ROLES_PATH="$KUBESPRAY_DIR/roles"
+export ANSIBLE_LIBRARY="$KUBESPRAY_DIR/library"
+"$VENV_DIR/bin/ansible-playbook" -i inventory/hosts.ini \
+  -u "$SSH_USER" --private-key "$SSH_KEY" -b cluster.yaml
+```
+
+اجرای مستقیم بالا خود کلاستر را نصب می‌کند. برای ذخیره kubeconfig موردنیاز مرحله Cilium، پس از موفقیت نصب:
+
+```bash
+umask 077
+ssh -i "$SSH_KEY" "$SSH_USER@$MASTER_IP" \
+  'sudo -n cat /etc/kubernetes/admin.conf' > private/admin.conf
+export KUBECONFIG="$PWD/private/admin.conf"
+cluster_name=$( .tools/bin/kubectl config view --minify -o jsonpath='{.clusters[0].name}' )
+.tools/bin/kubectl config set-cluster "$cluster_name" --server="https://$MASTER_IP:6443"
+```
+
+اسکریپت زیر همین `cluster.yaml` را اجرا و kubeconfig را هم دریافت می‌کند؛ یکی از این دو روش نصب را انتخاب کنید:
+
 ```bash
 bash scripts/install-kubernetes.sh
 ```
@@ -266,3 +291,5 @@ ssh devops@192.168.1.24 'sudo exportfs -v; findmnt /srv/nfs'
 - [Grafana Debian/Ubuntu](https://grafana.com/docs/grafana/latest/setup-grafana/installation/debian/)
 
 طرح Visio قابل‌ویرایش پس از اعلام «final» تهیه می‌شود.
+
+ورودی cluster.yaml از قابلیت رسمی [import_playbook](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/import_playbook_module.html) استفاده می‌کند.

@@ -12,3 +12,7 @@ Checked locally, without connecting to user VMs:
 Earlier backup script checks covered missing mount, backup failure, retention only after success and successful 14-day retention using mocked commands.
 
 Not validated against live servers: Arvan routing/security groups/MTU, blank disk preparation, OS package installation, MinIO license activation, runtime health, admission/schema validation against a running API, database connections, or real backup/restore. Follow install-a-to-z.md for acceptance checks. A successful syntax check is not a deployment result.
+
+## cluster.yaml entry point
+
+The root cluster.yaml import was syntax-checked from the project directory with the pinned Kubespray checkout, inventory, roles and library paths. The installation script now uses this same entry point; inspection/check modes exit before retrieving credentials. No managed host was contacted.
