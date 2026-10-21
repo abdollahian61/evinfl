@@ -1,8 +1,95 @@
-stages: [validate]
+stages: [validate, plan, provision, inventory, bootstrap, kubernetes, cilium, addons, verify]
+
+default:
+  tags: [evinfl-infra]
+
+variables:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
 validate:
   stage: validate
   image: python:3.12-slim
-  before_script:
-    - pip install ansible==12.3.0 PyYAML==6.0.3 netaddr==1.3.0
   script:
+    - pip install ansible==12.3.0 PyYAML==6.0.3 netaddr==1.3.0
     - python scripts/validate.py --ansible
+
+# The deployment jobs are intentionally disabled until the Arvan provider,
+# remote Terraform backend, credentials and private runner connectivity are verified.
+# Do not mistake this scaffold for a deployable production pipeline.
+terraform_plan:
+  stage: plan
+  image: hashicorp/terraform:1.10.5
+  script:
+    - cd terraform
+    - terraform init -backend=false
+    - terraform fmt -check -recursive
+    - terraform validate
+  rules:
+    - exists: [terraform/main.tf]
+      when: manual
+
+terraform_apply:
+  stage: provision
+  resource_group: arvan-production
+  script:
+    - echo "BLOCKED - configure Arvan provider and shared remote state first"
+    - exit 1
+  rules:
+    - when: manual
+      allow_failure: true
+
+generate_inventory:
+  stage: inventory
+  image: python:3.12-slim
+  script:
+    - python scripts/generate-inventory.py --input terraform-outputs.json --output inventory/generated/hosts.ini
+  artifacts:
+    paths: [inventory/generated/hosts.ini]
+    expire_in: 1 day
+  rules:
+    - when: manual
+      allow_failure: true
+
+bootstrap:
+  stage: bootstrap
+  script:
+    - test -f inventory/generated/hosts.ini
+    - ansible -i inventory/generated/hosts.ini all -m ping -u "$ANSIBLE_USER"
+  rules:
+    - when: manual
+      allow_failure: true
+
+kubernetes_install:
+  stage: kubernetes
+  script:
+    - test -n "$KUBESPRAY_DIR"
+    - ansible-playbook -i inventory/generated/hosts.ini "$KUBESPRAY_DIR/cluster.yml" -b -u "$ANSIBLE_USER"
+  rules:
+    - when: manual
+      allow_failure: true
+
+cilium_install:
+  stage: cilium
+  script:
+    - helm upgrade --install cilium cilium/cilium -n kube-system --create-namespace -f config/helm/cilium.yaml
+  rules:
+    - when: manual
+      allow_failure: true
+
+addons:
+  stage: addons
+  script:
+    - echo "Configure pinned add-on charts and approval gates before deployment"
+  rules:
+    - when: manual
+      allow_failure: true
+
+verify:
+  stage: verify
+  script:
+    - kubectl get nodes -o wide
+    - kubectl -n kube-system get pods
+  rules:
+    - when: manual
+      allow_failure: true
