@@ -1,0 +1,9 @@
+---
+- name: Reload HAProxy
+  ansible.builtin.systemd_service:
+    name: haproxy
+    state: reloaded
+- name: Restart HAProxy logging
+  ansible.builtin.systemd_service:
+    name: rsyslog
+    state: restarted

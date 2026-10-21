@@ -1,0 +1,65 @@
+fullnameOverride: monitoring
+grafana:
+  enabled: false
+kubeProxy:
+  enabled: false
+# Default Kubespray control-plane metrics endpoints are private/loopback.
+# Enable these only after configuring authenticated reachable endpoints.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+defaultRules:
+  rules:
+    kubeProxy: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+prometheus:
+  service:
+    type: NodePort
+    nodePort: 30900
+    externalTrafficPolicy: Local
+  prometheusSpec:
+    replicas: 1
+    retention: 7d
+    retentionSize: 6GB
+    nodeSelector:
+      kubernetes.io/hostname: k8s-worker01
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: monitoring-local
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 10Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1536Mi
+      limits:
+        cpu: "2"
+        memory: 3Gi
+alertmanager:
+  alertmanagerSpec:
+    replicas: 1
+    nodeSelector:
+      kubernetes.io/hostname: k8s-worker01
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: monitoring-local
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 2Gi
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi

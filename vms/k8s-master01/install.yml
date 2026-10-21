@@ -1,0 +1,9 @@
+---
+- name: Install and configure k8s-master01
+  hosts: k8s-master01
+  become: true
+  vars_files:
+  - vars.yml
+  roles:
+  - base
+  - k8s_node

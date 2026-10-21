@@ -1,0 +1,11 @@
+---
+- import_playbook: ../vms/k8s-master01/install.yml
+- import_playbook: ../vms/k8s-worker01/install.yml
+- import_playbook: ../vms/k8s-worker02/install.yml
+- import_playbook: ../vms/k8s-worker03/install.yml
+- import_playbook: ../vms/haproxy01/install.yml
+- import_playbook: ../vms/nfs01/install.yml
+- import_playbook: ../vms/minio01/install.yml
+- import_playbook: ../vms/monitoring01/install.yml
+- import_playbook: ../vms/clickhouse01/install.yml
+- import_playbook: ../vms/meilisearch01/install.yml

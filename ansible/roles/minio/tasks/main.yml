@@ -1,0 +1,111 @@
+---
+- name: Require MinIO credentials and supported architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.architecture in ['x86_64', 'aarch64']
+      - minio_root_user | length >= 3
+      - minio_root_password is match('^[A-Za-z0-9_-]{24,128}$')
+      - "'CHANGE_ME' not in minio_root_password"
+  no_log: true
+- name: Check commercial license file on controller
+  ansible.builtin.stat:
+    path: "{{ minio_license_src }}"
+  delegate_to: localhost
+  become: false
+  register: minio_license
+- name: Require license before deployment
+  ansible.builtin.assert:
+    that:
+      - minio_license.stat.exists
+      - minio_license.stat.size | default(0) > 0
+    fail_msg: Supply the purchased MinIO AIStor license at minio_license_src. This playbook does not purchase a subscription.
+- name: Require MinIO data mount
+  ansible.builtin.command: mountpoint -q /srv/minio
+  changed_when: false
+- name: Create MinIO service account
+  ansible.builtin.user:
+    name: minio-user
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+- name: Create MinIO data and config directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: minio-user
+    group: minio-user
+    mode: '0750'
+  loop: [/srv/minio/data, /etc/minio]
+- name: Inspect existing MinIO binary
+  ansible.builtin.stat:
+    path: /usr/local/bin/minio
+  register: existing_minio
+- name: Download latest stable AIStor on first install
+  ansible.builtin.get_url:
+    url: "https://dl.min.io/aistor/minio/release/linux-{{ 'amd64' if ansible_facts.architecture == 'x86_64' else 'arm64' }}/minio"
+    dest: /usr/local/bin/minio
+    mode: '0755'
+    checksum: "sha256:https://dl.min.io/aistor/minio/release/linux-{{ 'amd64' if ansible_facts.architecture == 'x86_64' else 'arm64' }}/minio.sha256sum"
+  when: not existing_minio.stat.exists
+- name: Install AIStor client
+  ansible.builtin.get_url:
+    url: "https://dl.min.io/aistor/mc/release/linux-{{ 'amd64' if ansible_facts.architecture == 'x86_64' else 'arm64' }}/mc"
+    dest: /usr/local/bin/mc
+    mode: '0755'
+    checksum: "sha256:https://dl.min.io/aistor/mc/release/linux-{{ 'amd64' if ansible_facts.architecture == 'x86_64' else 'arm64' }}/mc.sha256sum"
+    force: false
+- name: Install commercial license
+  ansible.builtin.copy:
+    src: "{{ minio_license_src }}"
+    dest: /etc/minio/minio.license
+    owner: root
+    group: minio-user
+    mode: '0640'
+  no_log: true
+  notify: Restart MinIO
+- name: Set MinIO credentials
+  ansible.builtin.template:
+    src: minio.env.j2
+    dest: /etc/default/minio
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: Restart MinIO
+- name: Install MinIO service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/minio.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Evinfl MinIO AIStor
+      Wants=network-online.target
+      After=network-online.target
+      RequiresMountsFor=/srv/minio
+      [Service]
+      User=minio-user
+      Group=minio-user
+      EnvironmentFile=/etc/default/minio
+      ExecStart=/usr/local/bin/minio server /srv/minio/data --address 192.168.1.28:9000 --console-address 192.168.1.28:9001 --license /etc/minio/minio.license
+      Restart=on-failure
+      RestartSec=5
+      LimitNOFILE=1048576
+      NoNewPrivileges=true
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart MinIO
+- name: Enable MinIO
+  ansible.builtin.systemd_service:
+    name: minio
+    daemon_reload: true
+    state: started
+    enabled: true
+- name: Record installed version
+  ansible.builtin.command: /usr/local/bin/minio --version
+  changed_when: false
+  register: minio_version
+- name: Save version record
+  ansible.builtin.copy:
+    dest: /etc/minio/installed-version.txt
+    content: "{{ minio_version.stdout }}\n"
+    mode: '0644'

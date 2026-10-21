@@ -1,0 +1,13 @@
+vm_private_ip: 192.168.1.30
+vm_vcpu: 4
+vm_ram_gb: 8
+vm_os_disk_gb: 30
+vm_data_disk_gb: 100
+data_device: /dev/sdb
+data_mount: /srv/monitoring
+data_fstype: ext4
+disk_bind_mounts:
+- subdir: postgresql
+  target: /var/lib/postgresql
+- subdir: grafana
+  target: /var/lib/grafana

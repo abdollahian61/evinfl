@@ -1,0 +1,10 @@
+---
+- name: Install and configure meilisearch01
+  hosts: meilisearch01
+  become: true
+  vars_files:
+  - vars.yml
+  roles:
+  - base
+  - data_disk
+  - meilisearch

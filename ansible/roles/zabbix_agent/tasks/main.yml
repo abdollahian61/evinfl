@@ -1,0 +1,25 @@
+---
+- name: Install Zabbix release repository
+  ansible.builtin.apt:
+    deb: "{{ zabbix_release_url }}"
+- name: Install Agent 2
+  ansible.builtin.apt:
+    name: zabbix-agent2
+    update_cache: true
+    state: present
+- name: Configure passive Agent 2
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_agent2.conf
+    regexp: "^#?\\s*{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - {key: Server, value: '192.168.1.30,127.0.0.1'}
+    - {key: Hostname, value: "{{ inventory_hostname }}"}
+    - {key: ListenIP, value: "{{ ansible_host }}"}
+    - {key: ServerActive, value: ''}
+  notify: Restart Agent 2
+- name: Enable Agent 2
+  ansible.builtin.systemd_service:
+    name: zabbix-agent2
+    state: started
+    enabled: true

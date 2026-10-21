@@ -1,0 +1,13 @@
+vm_private_ip: 192.168.1.22
+vm_vcpu: 6
+vm_ram_gb: 12
+vm_os_disk_gb: 30
+vm_data_disk_gb: 50
+data_device: /dev/sdb
+data_mount: /srv/k8s-data
+data_fstype: ext4
+disk_bind_mounts:
+- subdir: containerd
+  target: /var/lib/containerd
+- subdir: kubelet
+  target: /var/lib/kubelet

@@ -1,0 +1,6 @@
+---
+- name: Install passive Agent 2 on Ubuntu VMs
+  hosts: linux
+  become: true
+  roles:
+    - zabbix_agent

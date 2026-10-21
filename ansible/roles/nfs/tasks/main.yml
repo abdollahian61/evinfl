@@ -1,0 +1,70 @@
+---
+- name: Require NFS data mount
+  ansible.builtin.command: mountpoint -q /srv/nfs
+  changed_when: false
+- name: Install NFS and backup tools
+  ansible.builtin.apt:
+    name: [nfs-kernel-server, restic]
+    state: present
+- name: Create share writable by squashed provisioner root
+  ansible.builtin.file:
+    path: /srv/nfs/kubernetes
+    state: directory
+    owner: nobody
+    group: nogroup
+    mode: '2775'
+- name: Create exports directory
+  ansible.builtin.file:
+    path: /etc/exports.d
+    state: directory
+    mode: '0755'
+- name: Configure exact worker exports
+  ansible.builtin.copy:
+    dest: /etc/exports.d/evinfl.exports
+    mode: '0644'
+    content: |
+      /srv/nfs/kubernetes 192.168.1.21(rw,sync,no_subtree_check,root_squash) 192.168.1.22(rw,sync,no_subtree_check,root_squash) 192.168.1.23(rw,sync,no_subtree_check,root_squash)
+  notify: Reload NFS exports
+- name: Create NFS configuration directory
+  ansible.builtin.file:
+    path: /etc/nfs.conf.d
+    state: directory
+    mode: '0755'
+- name: Enable NFSv4 only
+  ansible.builtin.copy:
+    dest: /etc/nfs.conf.d/evinfl.conf
+    mode: '0644'
+    content: |
+      [nfsd]
+      vers2=n
+      vers3=n
+      vers4=y
+  notify: Restart NFS
+- name: Require data disk for NFS service
+  ansible.builtin.file:
+    path: /etc/systemd/system/nfs-server.service.d
+    state: directory
+    mode: '0755'
+- name: Configure NFS data dependency
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/nfs-server.service.d/20-evinfl-storage.conf
+    mode: '0644'
+    content: |
+      [Unit]
+      RequiresMountsFor=/srv/nfs
+- name: Enable NFS service
+  ansible.builtin.systemd_service:
+    name: nfs-server
+    enabled: true
+    state: started
+    daemon_reload: true
+- name: Install NFS backup script
+  ansible.builtin.copy:
+    src: "{{ project_root }}/scripts/backup/nfs-to-minio.sh"
+    dest: /usr/local/sbin/nfs-to-minio.sh
+    owner: root
+    group: root
+    mode: '0700'
+- name: Configure backup when credentials are supplied
+  ansible.builtin.include_tasks: backup.yml
+  when: nfs_backup_enabled | bool

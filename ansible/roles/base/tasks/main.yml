@@ -1,0 +1,41 @@
+---
+- name: Require Ubuntu 24.04
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version == '24.04'
+    fail_msg: This playbook targets fresh Ubuntu 24.04 VMs.
+- name: Install base packages
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg, jq, openssl, python3, python3-apt, nfs-common, chrony, util-linux, rsync, acl]
+    update_cache: true
+    cache_valid_time: 3600
+    state: present
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ evinfl_timezone }}"
+- name: Start time synchronization
+  ansible.builtin.service:
+    name: chrony
+    enabled: true
+    state: started
+- name: Record private VM names
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: '# {mark} EVINFL PRIVATE HOSTS'
+    block: |
+      192.168.1.4 kerio01
+      192.168.1.5 haproxy01
+      192.168.1.10 k8s-master01
+      192.168.1.21 k8s-worker01
+      192.168.1.22 k8s-worker02
+      192.168.1.23 k8s-worker03
+      192.168.1.24 nfs01
+      192.168.1.28 minio01
+      192.168.1.30 monitoring01
+      192.168.1.40 mssql01
+      192.168.1.42 clickhouse01
+      192.168.1.43 meilisearch01

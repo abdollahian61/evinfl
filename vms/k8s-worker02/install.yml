@@ -1,0 +1,10 @@
+---
+- name: Install and configure k8s-worker02
+  hosts: k8s-worker02
+  become: true
+  vars_files:
+  - vars.yml
+  roles:
+  - base
+  - data_disk
+  - k8s_node

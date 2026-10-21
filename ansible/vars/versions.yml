@@ -1,0 +1,15 @@
+---
+kubespray_version: v2.32.0
+kubernetes_version: 1.36.4
+helm_version: 3.22.0
+cilium_chart_version: 1.20.3
+gateway_api_version: v1.5.1
+traefik_chart_version: 42.1.1
+nfs_csi_chart_version: 4.13.5
+metrics_chart_version: 3.14.0
+prometheus_chart_version: 92.11.0
+velero_chart_version: 12.2.1
+velero_version: v1.18.2
+velero_aws_plugin_version: v1.14.4
+meilisearch_version: v1.55.0
+zabbix_series: '7.4'

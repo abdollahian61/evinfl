@@ -1,0 +1,56 @@
+deployment:
+  kind: DaemonSet
+providers:
+  kubernetesIngress:
+    enabled: false
+  kubernetesCRD:
+    enabled: false
+  kubernetesGateway:
+    enabled: true
+gatewayClass:
+  enabled: true
+  name: traefik
+gateway:
+  enabled: true
+  name: traefik-gateway
+  listeners:
+    web:
+      port: 8000
+      protocol: HTTP
+      namespacePolicy:
+        from: Selector
+        selector:
+          matchLabels:
+            gateway-access: "enabled"
+service:
+  spec:
+    type: NodePort
+    externalTrafficPolicy: Local
+ports:
+  web:
+    port: 8000
+    exposedPort: 80
+    nodePort: 30080
+    forwardedHeaders:
+      trustedIPs:
+        - 192.168.1.5/32
+      insecure: false
+  websecure:
+    expose:
+      default: false
+api:
+  dashboard: true
+ingressRoute:
+  dashboard:
+    enabled: false
+log:
+  level: INFO
+accessLog:
+  enabled: true
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi

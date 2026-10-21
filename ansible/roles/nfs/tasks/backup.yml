@@ -1,0 +1,49 @@
+---
+- name: Require backup secrets
+  ansible.builtin.assert:
+    that:
+      - nfs_backup_access_key | default('') | length > 0
+      - nfs_backup_secret_key | default('') | length > 0
+      - nfs_backup_repository_password | default('') | length >= 24
+      - "'CHANGE_ME' not in (nfs_backup_access_key | default(''))"
+      - "'CHANGE_ME' not in (nfs_backup_secret_key | default(''))"
+      - "'CHANGE_ME' not in (nfs_backup_repository_password | default(''))"
+  no_log: true
+- name: Install backup credentials
+  ansible.builtin.template:
+    src: nfs-backup.env.j2
+    dest: /etc/nfs-backup.env
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+- name: Preserve repository password on subsequent runs
+  ansible.builtin.copy:
+    dest: /etc/nfs-backup.password
+    content: "{{ nfs_backup_repository_password }}\n"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  no_log: true
+- name: Probe backup repository without changing it
+  ansible.builtin.command: /usr/local/sbin/nfs-to-minio.sh snapshots
+  register: nfs_repo_probe
+  changed_when: false
+  failed_when: false
+  when: nfs_backup_initialize | bool
+  no_log: true
+- name: Initialize a new repository when explicitly requested
+  ansible.builtin.command: /usr/local/sbin/nfs-to-minio.sh init
+  when:
+    - nfs_backup_initialize | bool
+    - nfs_repo_probe.rc | default(0) != 0
+  changed_when: true
+  no_log: true
+- name: Enable daily NFS backup
+  ansible.builtin.cron:
+    name: evinfl whole NFS backup
+    user: root
+    minute: '0'
+    hour: '2'
+    job: 'umask 077; /usr/local/sbin/nfs-to-minio.sh >> /var/log/nfs-backup.log 2>&1'

@@ -1,0 +1,4 @@
+vm_private_ip: 192.168.1.10
+vm_vcpu: 4
+vm_ram_gb: 8
+vm_os_disk_gb: 30

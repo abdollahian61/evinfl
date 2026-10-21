@@ -35,10 +35,10 @@
 
 | مورد | تصمیم فعلی |
 |---|---|
-| نسخه هدف | Kubernetes 1.36.x؛ patch دقیق هنگام نهایی‌سازی انتخاب می‌شود |
+| نسخه هدف | Kubernetes 1.36.4؛ نسخه‌های دیگر در config/versions.env |
 | ابزار نصب | Kubespray؛ مبنای سازگار بررسی‌شده v2.32.0 |
-| Runtime | containerd؛ نسخه دقیق سازگار با Kubespray/Kubernetes تعیین می‌شود |
-| CNI | Cilium با Helm؛ شاخه سازگار بررسی‌شده 1.20.x |
+| Runtime | containerd 2.3.5 مطابق bundle Kubespray |
+| CNI | Cilium با Helm؛ نسخه Helm chart ثابت 1.20.3 |
 | kube-proxy | از ابتدا نصب نمی‌شود؛ Cilium با `kubeProxyReplacement` فعال |
 | Pod CIDR | `10.244.0.0/16` |
 | Service CIDR | `10.96.0.0/16` |
@@ -65,7 +65,7 @@
 - Zabbix و Grafana روی `monitoring01` برای پایش دارایی‌ها.
 - ابزارهای مدیریت Kubernetes شامل kubectl، Helm، Ansible و Kubespray روی همین ماشین.
 - CI/CD Runner روی این ماشین اجرا نمی‌شود.
-- Prometheus Stack داخل کلاستر است؛ نگهداری متریک‌ها، storage آن و نحوه اتصال Grafana بیرونی هنوز نهایی نشده‌اند.
+- Prometheus Stack داخل کلاستر است؛ داده‌ها روی Local PV در Worker01 با retention هفت‌روز و سقف 6GB قرار دارند. Grafana بیرونی از NodePort خصوصی 30900 استفاده می‌کند.
 
 ## بکاپ
 
@@ -81,13 +81,13 @@
 
 - IPهای عمومی، subnet mask، رنج VPN، DNS، NTP و دامنه‌ها.
 - کانفیگ نهایی شبکه آروان و قواعد فایروال/مسیر برگشت.
-- patch دقیق Kubernetes و نسخه‌های هماهنگ Kubespray، containerd، Cilium، Helm، Traefik و Gateway API.
-- روش شبکه Cilium، MTU، پورت‌های بین نودها و تنظیمات NodePort.
-- نام دیسک‌ها، UUIDها، filesystem و مسیرهای mount؛ هدف دیسک دوم HAProxy.
-- StorageClass، روش provision، منابع و storage متریک‌ها و جزئیات پایش بیرونی.
-- برنامه و ساعت Velero، نصب و فعال‌سازی MinIO و لایسنس، و آزمون Restore.
+- اجرای نسخه‌های ثابت config/versions.env و کنترل سازگاری در محیط واقعی.
+- آزمون MTU خودکار و VXLAN در شبکه واقعی آروان؛ تنظیمات در config/helm/cilium.yaml.
+- تأیید نام واقعی sdb پیش از فرمت؛ دیسک دوم HAProxy برای log انتخاب شده است.
+- پذیرش عملی NFS CSI، local PV متریک‌ها و اتصال Grafana طبق راهنمای اجرا.
+- فعال‌سازی لایسنس MinIO، ساخت کلیدها و آزمون Restore؛ زمان‌بندی‌ها در راهنمای اجرا مشخص‌اند.
 - نقاط تک‌خرابی و مسیر ارتقای HA؛ تعداد فعلی VMها تغییر نمی‌کند مگر با تصمیم مالک پروژه.
-- خروجی نهایی Visio و راهنمای کامل نصب پس از اعلام «final».
+- خروجی Visio پس از اعلام «final»؛ [راهنمای نصب](install-a-to-z.md) اکنون موجود است.
 
 ## منابع فنی
 

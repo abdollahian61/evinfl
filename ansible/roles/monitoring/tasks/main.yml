@@ -1,0 +1,214 @@
+---
+- name: Require monitoring secrets
+  ansible.builtin.assert:
+    that:
+      - zabbix_db_password is match('^[A-Za-z0-9_-]{24,128}$')
+      - grafana_admin_password is match('^[A-Za-z0-9_-]{24,128}$')
+      - "'CHANGE_ME' not in zabbix_db_password"
+      - "'CHANGE_ME' not in grafana_admin_password"
+  no_log: true
+- name: Require monitoring data disk
+  ansible.builtin.command: mountpoint -q /srv/monitoring
+  changed_when: false
+- name: Install PostgreSQL and its Ansible dependencies
+  ansible.builtin.apt:
+    name: [postgresql, python3-psycopg2, acl, nginx, php8.3-fpm, php8.3-pgsql]
+    state: present
+- name: Own PostgreSQL data directory
+  ansible.builtin.file:
+    path: /var/lib/postgresql
+    owner: postgres
+    group: postgres
+    state: directory
+    mode: '0755'
+- name: Install Zabbix repository package
+  ansible.builtin.apt:
+    deb: "{{ zabbix_release_url }}"
+- name: Install Zabbix PostgreSQL server and UI
+  ansible.builtin.apt:
+    name: [zabbix-server-pgsql, zabbix-frontend-php, php8.3-pgsql, zabbix-nginx-conf, zabbix-sql-scripts, zabbix-agent2]
+    update_cache: true
+    state: present
+- name: Start PostgreSQL
+  ansible.builtin.systemd_service:
+    name: postgresql
+    state: started
+    enabled: true
+- name: Create Zabbix database role
+  community.postgresql.postgresql_user:
+    name: zabbix
+    password: "{{ zabbix_db_password }}"
+    login_unix_socket: /var/run/postgresql
+  become_user: postgres
+  no_log: true
+- name: Create Zabbix database
+  community.postgresql.postgresql_db:
+    name: zabbix
+    owner: zabbix
+    encoding: UTF8
+    template: template0
+    login_unix_socket: /var/run/postgresql
+  become_user: postgres
+- name: Check whether schema is already initialized
+  community.postgresql.postgresql_query:
+    login_db: zabbix
+    login_unix_socket: /var/run/postgresql
+    query: SELECT to_regclass('public.dbversion') AS present
+  become_user: postgres
+  register: zabbix_schema
+- name: Import initial schema only for an empty database
+  ansible.builtin.shell: |
+    set -euo pipefail
+    zcat /usr/share/zabbix/sql-scripts/postgresql/server.sql.gz | psql -v ON_ERROR_STOP=1 -d zabbix
+  args:
+    executable: /bin/bash
+  become_user: zabbix
+  when: zabbix_schema.query_result[0].present is none
+  changed_when: true
+- name: Configure Zabbix database connection
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: "^#?\\s*{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - {key: DBHost, value: localhost}
+    - {key: DBName, value: zabbix}
+    - {key: DBUser, value: zabbix}
+    - {key: DBPassword, value: "{{ zabbix_db_password }}"}
+  no_log: true
+  notify: Restart Zabbix server
+- name: Configure Zabbix private frontend listener
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/nginx.conf
+    regexp: '^#?\s*listen\s+'
+    line: '        listen 192.168.1.30:8080;'
+  notify: Restart monitoring Nginx
+- name: Configure Zabbix frontend name
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/nginx.conf
+    regexp: '^#?\s*server_name\s+'
+    line: '        server_name monitoring01;'
+  notify: Restart monitoring Nginx
+- name: Remove unused stock Nginx welcome site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Restart monitoring Nginx
+- name: Create Zabbix frontend config directory
+  ansible.builtin.file:
+    path: /etc/zabbix/web
+    state: directory
+    owner: root
+    group: www-data
+    mode: '0750'
+- name: Configure frontend database
+  ansible.builtin.template:
+    src: zabbix.conf.php.j2
+    dest: /etc/zabbix/web/zabbix.conf.php
+    owner: root
+    group: www-data
+    mode: '0640'
+  no_log: true
+- name: Set PHP timezone
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/php-fpm.conf
+    regexp: '^;?\s*php_value\[date.timezone\]'
+    line: "php_value[date.timezone] = {{ evinfl_timezone }}"
+  notify: Restart monitoring PHP
+- name: Download Grafana repository key
+  ansible.builtin.get_url:
+    url: https://apt.grafana.com/gpg.key
+    dest: /usr/share/keyrings/grafana.asc
+    mode: '0644'
+- name: Add signed Grafana repository
+  ansible.builtin.apt_repository:
+    repo: 'deb [signed-by=/usr/share/keyrings/grafana.asc] https://apt.grafana.com stable main'
+    filename: grafana
+    state: present
+- name: Install Grafana
+  ansible.builtin.apt:
+    name: grafana
+    update_cache: true
+    state: present
+- name: Own Grafana data directory
+  ansible.builtin.file:
+    path: /var/lib/grafana
+    owner: grafana
+    group: grafana
+    state: directory
+    mode: '0750'
+- name: Configure Grafana private listener
+  community.general.ini_file:
+    path: /etc/grafana/grafana.ini
+    section: "{{ item.section }}"
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    mode: '0640'
+  loop:
+    - {section: server, option: http_addr, value: 192.168.1.30}
+    - {section: server, option: http_port, value: '3000'}
+    - {section: users, option: allow_sign_up, value: 'false'}
+    - {section: auth.anonymous, option: enabled, value: 'false'}
+  notify: Restart Grafana
+- name: Configure Grafana initial administrator password
+  community.general.ini_file:
+    path: /etc/grafana/grafana.ini
+    section: security
+    option: admin_password
+    value: "{{ grafana_admin_password }}"
+    owner: root
+    group: grafana
+    mode: '0640'
+  no_log: true
+  notify: Restart Grafana
+- name: Provision Prometheus datasource
+  ansible.builtin.copy:
+    dest: /etc/grafana/provisioning/datasources/evinfl-prometheus.yml
+    owner: root
+    group: grafana
+    mode: '0640'
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Evinfl Prometheus
+          uid: evinfl-prometheus
+          type: prometheus
+          access: proxy
+          url: http://192.168.1.21:30900
+          isDefault: true
+          editable: false
+  notify: Restart Grafana
+- name: Install Zabbix datasource plugin
+  ansible.builtin.command:
+    argv:
+      - /usr/share/grafana/bin/grafana
+      - cli
+      - --pluginsDir
+      - /var/lib/grafana/plugins
+      - plugins
+      - install
+      - alexanderzobnin-zabbix-app
+    creates: /var/lib/grafana/plugins/alexanderzobnin-zabbix-app/plugin.json
+  become_user: grafana
+  notify: Restart Grafana
+- name: Require data mounts for monitoring services
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.service.d"
+    state: directory
+    mode: '0755'
+  loop: [postgresql@16-main, grafana-server]
+- name: Set monitoring mount dependencies
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item }}.service.d/20-evinfl-storage.conf"
+    mode: '0644'
+    content: |
+      [Unit]
+      RequiresMountsFor=/srv/monitoring /var/lib/postgresql /var/lib/grafana
+  loop: [postgresql@16-main, grafana-server]
+- name: Enable monitoring services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: [zabbix-server, zabbix-agent2, php8.3-fpm, nginx, grafana-server]

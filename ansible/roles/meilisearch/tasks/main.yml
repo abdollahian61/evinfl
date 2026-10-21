@@ -1,0 +1,68 @@
+---
+- name: Require a production master key and supported architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.architecture in ['x86_64', 'aarch64']
+      - meilisearch_master_key is match('^[A-Za-z0-9_-]{32,128}$')
+      - "'CHANGE_ME' not in meilisearch_master_key"
+  no_log: true
+- name: Require Meilisearch data mount
+  ansible.builtin.command: mountpoint -q /var/lib/meilisearch
+  changed_when: false
+- name: Create Meilisearch service user
+  ansible.builtin.user:
+    name: meilisearch
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+- name: Set data ownership
+  ansible.builtin.file:
+    path: /var/lib/meilisearch
+    state: directory
+    owner: meilisearch
+    group: meilisearch
+    mode: '0750'
+- name: Install pinned verified Meilisearch binary
+  ansible.builtin.get_url:
+    url: "https://github.com/meilisearch/meilisearch/releases/download/{{ meilisearch_version }}/meilisearch-linux-{{ 'amd64' if ansible_facts.architecture == 'x86_64' else 'aarch64' }}"
+    checksum: "sha256:{{ meilisearch_checksums[ansible_facts.architecture] }}"
+    dest: /usr/local/bin/meilisearch
+    mode: '0755'
+  notify: Restart Meilisearch
+- name: Configure production environment
+  ansible.builtin.template:
+    src: meilisearch.env.j2
+    dest: /etc/default/meilisearch
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: Restart Meilisearch
+- name: Install Meilisearch service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/meilisearch.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Evinfl Meilisearch
+      Wants=network-online.target
+      After=network-online.target
+      RequiresMountsFor=/var/lib/meilisearch
+      [Service]
+      User=meilisearch
+      Group=meilisearch
+      WorkingDirectory=/var/lib/meilisearch
+      EnvironmentFile=/etc/default/meilisearch
+      ExecStart=/usr/local/bin/meilisearch
+      Restart=on-failure
+      RestartSec=5
+      NoNewPrivileges=true
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart Meilisearch
+- name: Start Meilisearch
+  ansible.builtin.systemd_service:
+    name: meilisearch
+    daemon_reload: true
+    enabled: true
+    state: started

@@ -1,0 +1,21 @@
+---
+- name: Restart Zabbix server
+  ansible.builtin.systemd_service:
+    name: zabbix-server
+    state: restarted
+- name: Restart monitoring Nginx
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  notify: Apply monitoring Nginx
+- name: Apply monitoring Nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: restarted
+- name: Restart monitoring PHP
+  ansible.builtin.systemd_service:
+    name: php8.3-fpm
+    state: restarted
+- name: Restart Grafana
+  ansible.builtin.systemd_service:
+    name: grafana-server
+    state: restarted

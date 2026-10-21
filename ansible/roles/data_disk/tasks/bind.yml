@@ -1,0 +1,40 @@
+---
+- name: Check whether target is already a mount
+  ansible.builtin.command:
+    argv: [mountpoint, -q, "{{ binding.target }}"]
+  register: binding_mount
+  failed_when: binding_mount.rc not in [0, 1, 32]
+  changed_when: false
+- name: Inspect target contents before first bind mount
+  ansible.builtin.find:
+    paths: "{{ binding.target }}"
+    hidden: true
+    recurse: false
+    file_type: any
+  register: binding_contents
+  when: binding_mount.rc != 0
+- name: Prevent hiding existing runtime or database files
+  ansible.builtin.assert:
+    that: binding_contents.matched | default(0) == 0
+    fail_msg: Existing files would be hidden by a bind mount. Migrate them explicitly before proceeding.
+  when: binding_mount.rc != 0
+- name: Create bind source and target
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ data_mount }}/{{ binding.subdir }}"
+    - "{{ binding.target }}"
+- name: Persist bind mount
+  ansible.posix.mount:
+    path: "{{ binding.target }}"
+    src: "{{ data_mount }}/{{ binding.subdir }}"
+    fstype: none
+    opts: "bind,x-systemd.requires-mounts-for={{ data_mount }}"
+    state: mounted
+- name: Set kubelet mount propagation
+  ansible.builtin.command:
+    argv: [mount, --make-rshared, "{{ binding.target }}"]
+  changed_when: false
+  when: binding.target == '/var/lib/kubelet'

@@ -1,0 +1,10 @@
+---
+- name: Install and configure haproxy01
+  hosts: haproxy01
+  become: true
+  vars_files:
+  - vars.yml
+  roles:
+  - base
+  - data_disk
+  - haproxy

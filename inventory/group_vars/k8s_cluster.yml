@@ -1,0 +1,45 @@
+---
+kube_version: "1.36.4"
+container_manager: containerd
+# Generic CNI copies standard CNI binaries without installing Calico/Cilium.
+kube_network_plugin: cni
+kube_network_plugin_multus: false
+kube_proxy_remove: true
+kube_owner: root
+kube_service_addresses: 10.96.0.0/16
+kube_pods_subnet: 10.244.0.0/16
+kube_network_node_prefix: 24
+kube_controller_manager_allocate_node_cidrs: true
+ipv4_stack: true
+ipv6_stack: false
+# One private control-plane endpoint, independent of the public web HAProxy.
+loadbalancer_apiserver_localhost: false
+kube_apiserver_bind_address: 192.168.1.10
+supplementary_addresses_in_ssl_keys:
+  - 192.168.1.10
+cluster_name: evinfl.local
+dns_domain: cluster.local
+dns_mode: coredns
+enable_nodelocaldns: false
+# Preserve working host DNS while Cilium has not yet been installed.
+resolvconf_mode: none
+kube_resolv_conf: /run/systemd/resolve/resolv.conf
+kubeconfig_localhost: true
+kubectl_localhost: false
+helm_enabled: true
+# Valid serving certificates for Metrics Server; no insecure TLS bypass.
+kubelet_rotate_server_certificates: true
+kubelet_csr_approver_enabled: true
+metrics_server_enabled: false
+ingress_nginx_enabled: false
+ingress_alb_enabled: false
+metallb_enabled: false
+local_path_provisioner_enabled: false
+local_volume_provisioner_enabled: false
+gateway_api_enabled: false
+cert_manager_enabled: false
+argocd_enabled: false
+# Keep canonical paths; the worker disk preparation binds these onto sdb.
+containerd_storage_dir: /var/lib/containerd
+kubelet_logfiles_max_size: 10Mi
+kubelet_logfiles_max_nr: 3

@@ -1,0 +1,77 @@
+---
+- name: Resolve data device
+  ansible.builtin.command:
+    argv: [readlink, -f, "{{ data_device }}"]
+  register: disk_real
+  changed_when: false
+  check_mode: false
+- name: Inspect data device topology
+  ansible.builtin.command:
+    argv: [lsblk, --json, --output, PATH,TYPE,FSTYPE,MOUNTPOINTS, "{{ disk_real.stdout }}"]
+  register: disk_info
+  changed_when: false
+  check_mode: false
+- name: Read root filesystem device
+  ansible.builtin.command:
+    argv: [findmnt, -n, -o, SOURCE, /]
+  register: root_device
+  changed_when: false
+  check_mode: false
+- name: Read root device ancestors
+  ansible.builtin.command:
+    argv: [lsblk, -s, -n, -r, -p, -o, PATH, "{{ root_device.stdout }}"]
+  register: root_ancestors
+  changed_when: false
+  check_mode: false
+- name: Reject root disks, partitions, child devices or conflicting filesystems
+  ansible.builtin.assert:
+    that:
+      - disk_real.stdout not in root_ancestors.stdout_lines
+      - (disk_info.stdout | from_json).blockdevices | length == 1
+      - (disk_info.stdout | from_json).blockdevices[0].type == 'disk'
+      - ((disk_info.stdout | from_json).blockdevices[0].children | default([])) | length == 0
+      - ((disk_info.stdout | from_json).blockdevices[0].fstype | default('', true)) in ['', data_fstype]
+      - ((disk_info.stdout | from_json).blockdevices[0].mountpoints | default([]) | reject('equalto', none) | list | difference([data_mount] + (disk_bind_mounts | map(attribute='target') | list))) | length == 0
+    fail_msg: Data device is not a standalone safe data disk; inspect lsblk and override data_device if needed.
+- name: Check signatures before creating a filesystem
+  ansible.builtin.command:
+    argv: [wipefs, --no-act, --json, "{{ disk_real.stdout }}"]
+  register: disk_signatures
+  changed_when: false
+  check_mode: false
+- name: Require explicit authorization for formatting a blank disk
+  ansible.builtin.assert:
+    that:
+      - data_disk_allow_format | bool
+      - (disk_signatures.stdout | from_json).signatures | default([]) | length == 0
+    fail_msg: Formatting is disabled. Confirm the correct empty data disk, then pass data_disk_allow_format=true as a YAML/JSON boolean.
+  when: not ((disk_info.stdout | from_json).blockdevices[0].fstype | default('', true))
+- name: Install filesystem utilities
+  ansible.builtin.apt:
+    name: "{{ 'xfsprogs' if data_fstype == 'xfs' else 'e2fsprogs' }}"
+    state: present
+- name: Create filesystem only when needed
+  community.general.filesystem:
+    dev: "{{ disk_real.stdout }}"
+    fstype: "{{ data_fstype }}"
+    force: false
+- name: Read filesystem UUID
+  ansible.builtin.command:
+    argv: [blkid, -s, UUID, -o, value, "{{ disk_real.stdout }}"]
+  register: data_uuid
+  changed_when: false
+  when: not ansible_check_mode
+- name: Persist and mount data disk
+  ansible.posix.mount:
+    path: "{{ data_mount }}"
+    src: "UUID={{ data_uuid.stdout }}"
+    fstype: "{{ data_fstype }}"
+    opts: defaults
+    state: mounted
+  when: not ansible_check_mode
+- name: Prepare bind mounts
+  ansible.builtin.include_tasks: bind.yml
+  loop: "{{ disk_bind_mounts }}"
+  loop_control:
+    loop_var: binding
+  when: not ansible_check_mode

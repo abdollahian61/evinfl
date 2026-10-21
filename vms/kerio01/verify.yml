@@ -1,0 +1,11 @@
+- name: Check manually installed kerio01
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  tasks:
+  - name: Check private service port
+    ansible.builtin.wait_for:
+      host: 192.168.1.4
+      port: 4090
+      timeout: 10

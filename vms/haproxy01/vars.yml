@@ -1,0 +1,10 @@
+vm_private_ip: 192.168.1.5
+vm_vcpu: 4
+vm_ram_gb: 8
+vm_os_disk_gb: 30
+vm_data_disk_gb: 50
+data_device: /dev/sdb
+data_mount: /srv/haproxy
+data_fstype: ext4
+app_domain: app.example.com
+haproxy_allow_self_signed: false

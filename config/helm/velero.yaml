@@ -1,0 +1,46 @@
+image:
+  tag: v1.18.2
+initContainers:
+  - name: velero-plugin-for-aws
+    image: velero/velero-plugin-for-aws:v1.14.4
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+credentials:
+  useSecret: true
+  existingSecret: velero-credentials
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: velero
+      default: true
+      accessMode: ReadWrite
+      config:
+        region: us-east-1
+        s3ForcePathStyle: "true"
+        s3Url: http://192.168.1.28:9000
+  volumeSnapshotLocation: []
+  defaultBackupTTL: 336h
+backupsEnabled: true
+snapshotsEnabled: false
+# Whole NFS data is backed up independently by Restic on nfs01.
+deployNodeAgent: false
+schedules:
+  daily-resources:
+    disabled: false
+    schedule: "0 22 * * *"
+    useOwnerReferencesInBackup: false
+    template:
+      ttl: 336h
+      includedNamespaces: ["*"]
+      includeClusterResources: true
+      snapshotVolumes: false
+      defaultVolumesToFsBackup: false
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

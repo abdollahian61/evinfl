@@ -1,0 +1,17 @@
+<clickhouse>
+  <users>
+    <default>
+      <networks replace="replace"><ip>127.0.0.1</ip><ip>::1</ip></networks>
+    </default>
+    <evinfl>
+      <password_sha256_hex>{{ clickhouse_app_password | hash('sha256') }}</password_sha256_hex>
+      <networks>
+        <ip>127.0.0.1</ip>
+        <ip>192.168.1.21</ip><ip>192.168.1.22</ip><ip>192.168.1.23</ip>
+        <ip>192.168.1.30</ip>
+      </networks>
+      <profile>default</profile>
+      <quota>default</quota>
+    </evinfl>
+  </users>
+</clickhouse>

@@ -1,0 +1,5 @@
+controller:
+  replicas: 1
+  runOnControlPlane: false
+  enableSnapshotter: false
+kubeletDir: /var/lib/kubelet

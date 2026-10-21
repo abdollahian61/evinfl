@@ -1,0 +1,22 @@
+---
+project_root: "{{ inventory_dir | dirname }}"
+evinfl_timezone: Asia/Tehran
+data_disk_allow_format: false
+data_device: /dev/sdb
+data_fstype: ext4
+disk_bind_mounts: []
+nfs_backup_enabled: false
+nfs_backup_initialize: false
+zabbix_series: "7.4"
+minio_root_user: ""
+minio_root_password: ""
+minio_license_src: "{{ project_root }}/private/minio.license"
+zabbix_db_password: ""
+grafana_admin_password: ""
+clickhouse_app_password: ""
+meilisearch_master_key: ""
+meilisearch_version: v1.55.0
+meilisearch_checksums:
+  x86_64: 7e33f5889235f14290074a19a6d3574bd9b10fb2ee8731eabb7dafd0714b0513
+  aarch64: f268dde681f20f6fc393d053dab11909d059574e52916355ad1d10212ec8a2a7
+zabbix_release_url: "https://repo.zabbix.com/zabbix/{{ zabbix_series }}/release/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb"

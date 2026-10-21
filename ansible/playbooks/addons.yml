@@ -1,0 +1,244 @@
+---
+- name: Install Kubernetes addons in dependency order
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    helm_binary: "{{ project_root }}/.tools/bin/helm"
+    kubectl_binary: "{{ project_root }}/.tools/bin/kubectl"
+    kubeconfig_path: "{{ project_root }}/private/admin.conf"
+  vars_files:
+    - ../vars/versions.yml
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  tasks:
+    - name: Check private kubeconfig
+      ansible.builtin.stat:
+        path: "{{ kubeconfig_path }}"
+      register: addon_kubeconfig
+      tags: always
+    - name: Require successful control-plane installation
+      ansible.builtin.assert:
+        that: addon_kubeconfig.stat.exists
+        fail_msg: Run scripts/install-kubernetes.sh first.
+      tags: always
+    - name: Install Cilium
+      tags: cilium
+      block:
+        - name: Add Cilium chart repository
+          kubernetes.core.helm_repository:
+            name: cilium
+            repo_url: https://helm.cilium.io/
+            binary_path: "{{ helm_binary }}"
+        - name: Deploy Cilium without kube-proxy
+          kubernetes.core.helm:
+            name: cilium
+            chart_ref: cilium/cilium
+            chart_version: "{{ cilium_chart_version }}"
+            release_namespace: kube-system
+            kubeconfig: "{{ kubeconfig_path }}"
+            binary_path: "{{ helm_binary }}"
+            release_values: "{{ lookup('file', project_root ~ '/config/helm/cilium.yaml') | from_yaml }}"
+            update_repo_cache: true
+            wait: true
+            timeout: 15m
+        - name: Wait for all nodes
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", wait, --for=condition=Ready, nodes, --all, --timeout=600s]
+          changed_when: false
+        - name: Wait for DNS
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", -n, kube-system, rollout, status, deployment/coredns, --timeout=300s]
+          changed_when: false
+    - name: Install NFS storage
+      tags: storage
+      block:
+        - name: Add NFS CSI chart repository
+          kubernetes.core.helm_repository:
+            name: csi-driver-nfs
+            repo_url: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+            binary_path: "{{ helm_binary }}"
+        - name: Deploy NFS CSI
+          kubernetes.core.helm:
+            name: csi-driver-nfs
+            chart_ref: csi-driver-nfs/csi-driver-nfs
+            chart_version: "{{ nfs_csi_chart_version }}"
+            release_namespace: kube-system
+            kubeconfig: "{{ kubeconfig_path }}"
+            binary_path: "{{ helm_binary }}"
+            release_values: "{{ lookup('file', project_root ~ '/config/helm/csi-nfs.yaml') | from_yaml }}"
+            update_repo_cache: true
+            wait: true
+            timeout: 10m
+        - name: Apply storage classes
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", apply, -f, "{{ project_root }}/manifests/storage.yaml"]
+          register: storage_apply
+          changed_when: "'created' in storage_apply.stdout or 'configured' in storage_apply.stdout"
+        - name: Apply NFS smoke test
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", apply, -f, "{{ project_root }}/manifests/nfs-smoke.yaml"]
+          register: smoke_apply
+          changed_when: "'created' in smoke_apply.stdout or 'configured' in smoke_apply.stdout"
+        - name: Verify NFS read and write
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", -n, storage-test, wait, --for=condition=complete, job/nfs-smoke, --timeout=300s]
+          changed_when: false
+    - name: Install Traefik Gateway API
+      tags: gateway
+      block:
+        - name: Apply pinned standard Gateway API CRDs
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", apply, --server-side, -f, "https://github.com/kubernetes-sigs/gateway-api/releases/download/{{ gateway_api_version }}/standard-install.yaml"]
+          register: gateway_crds
+          changed_when: "'created' in gateway_crds.stdout or 'configured' in gateway_crds.stdout"
+        - name: Add Traefik chart repository
+          kubernetes.core.helm_repository:
+            name: traefik
+            repo_url: https://traefik.github.io/charts
+            binary_path: "{{ helm_binary }}"
+        - name: Deploy Traefik on workers
+          kubernetes.core.helm:
+            name: traefik
+            chart_ref: traefik/traefik
+            chart_version: "{{ traefik_chart_version }}"
+            release_namespace: traefik
+            create_namespace: true
+            kubeconfig: "{{ kubeconfig_path }}"
+            binary_path: "{{ helm_binary }}"
+            release_values: "{{ lookup('file', project_root ~ '/config/helm/traefik.yaml') | from_yaml }}"
+            update_repo_cache: true
+            wait: true
+            timeout: 10m
+        - name: Apply demonstration HTTPRoute and workload
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", apply, -f, "{{ project_root }}/manifests/gateway-demo.yaml"]
+          register: demo_apply
+          changed_when: "'created' in demo_apply.stdout or 'configured' in demo_apply.stdout"
+    - name: Install Metrics Server
+      tags: metrics
+      block:
+        - name: Add metrics chart repository
+          kubernetes.core.helm_repository:
+            name: metrics-server
+            repo_url: https://kubernetes-sigs.github.io/metrics-server/
+            binary_path: "{{ helm_binary }}"
+        - name: Deploy Metrics Server with kubelet certificate verification
+          kubernetes.core.helm:
+            name: metrics-server
+            chart_ref: metrics-server/metrics-server
+            chart_version: "{{ metrics_chart_version }}"
+            release_namespace: kube-system
+            kubeconfig: "{{ kubeconfig_path }}"
+            binary_path: "{{ helm_binary }}"
+            release_values: "{{ lookup('file', project_root ~ '/config/helm/metrics-server.yaml') | from_yaml }}"
+            update_repo_cache: true
+            wait: true
+            timeout: 10m
+    - name: Install Prometheus Stack
+      tags: monitoring
+      block:
+        - name: Verify worker01 data mount before creating local PV directories
+          ansible.builtin.command: mountpoint -q /srv/k8s-data
+          delegate_to: k8s-worker01
+          connection: ssh
+          become: true
+          changed_when: false
+        - name: Create local metrics directories on worker01
+          ansible.builtin.file:
+            path: "/srv/k8s-data/observability/{{ item }}"
+            owner: '1000'
+            group: '2000'
+            mode: '0770'
+            state: directory
+          loop: [prometheus, alertmanager]
+          delegate_to: k8s-worker01
+          connection: ssh
+          become: true
+        - name: Create static local volumes
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", apply, -f, "{{ project_root }}/manifests/monitoring-volumes.yaml"]
+          register: metrics_pvs
+          changed_when: "'created' in metrics_pvs.stdout or 'configured' in metrics_pvs.stdout"
+        - name: Add Prometheus chart repository
+          kubernetes.core.helm_repository:
+            name: prometheus-community
+            repo_url: https://prometheus-community.github.io/helm-charts
+            binary_path: "{{ helm_binary }}"
+        - name: Deploy Prometheus Operator and stack
+          kubernetes.core.helm:
+            name: monitoring
+            chart_ref: prometheus-community/kube-prometheus-stack
+            chart_version: "{{ prometheus_chart_version }}"
+            release_namespace: monitoring
+            create_namespace: true
+            kubeconfig: "{{ kubeconfig_path }}"
+            binary_path: "{{ helm_binary }}"
+            release_values: "{{ lookup('file', project_root ~ '/config/helm/prometheus.yaml') | from_yaml }}"
+            update_repo_cache: true
+            wait: true
+            timeout: 15m
+    - name: Install Velero resource backups
+      tags: velero
+      block:
+        - name: Require private S3 credential file
+          ansible.builtin.stat:
+            path: "{{ project_root }}/private/velero-credentials"
+          register: velero_credentials
+        - name: Require credentials before installing Velero
+          ansible.builtin.assert:
+            that:
+              - velero_credentials.stat.exists
+              - velero_credentials.stat.size | default(0) > 0
+            fail_msg: Create private/velero-credentials and the velero bucket first; see the runbook.
+        - name: Create Velero namespace
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", apply, -f, '-']
+            stdin: |
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: velero
+          register: velero_ns
+          changed_when: "'created' in velero_ns.stdout or 'configured' in velero_ns.stdout"
+        - name: Install S3 credential Secret without logging its content
+          ansible.builtin.shell: |
+            set -euo pipefail
+            {{ kubectl_binary | quote }} -n velero create secret generic velero-credentials --from-file=cloud={{ (project_root ~ '/private/velero-credentials') | quote }} --dry-run=client -o yaml | {{ kubectl_binary | quote }} apply -f -
+          args:
+            executable: /bin/bash
+          register: velero_secret
+          changed_when: "'created' in velero_secret.stdout or 'configured' in velero_secret.stdout"
+          no_log: true
+        - name: Add Velero chart repository
+          kubernetes.core.helm_repository:
+            name: vmware-tanzu
+            repo_url: https://vmware-tanzu.github.io/helm-charts
+            binary_path: "{{ helm_binary }}"
+        - name: Deploy Velero
+          kubernetes.core.helm:
+            name: velero
+            chart_ref: vmware-tanzu/velero
+            chart_version: "{{ velero_chart_version }}"
+            release_namespace: velero
+            kubeconfig: "{{ kubeconfig_path }}"
+            binary_path: "{{ helm_binary }}"
+            release_values: "{{ lookup('file', project_root ~ '/config/helm/velero.yaml') | from_yaml }}"
+            update_repo_cache: true
+            wait: true
+            timeout: 10m
+        - name: Inspect backup storage availability
+          ansible.builtin.command:
+            argv: ["{{ kubectl_binary }}", -n, velero, get, backupstoragelocations, -o, 'jsonpath={.items[0].status.phase}']
+          register: velero_bsl
+          until: velero_bsl.stdout == 'Available'
+          retries: 12
+          delay: 10
+          changed_when: false
+    - name: Show cluster verification commands
+      tags: verify
+      ansible.builtin.command:
+        argv: ["{{ kubectl_binary }}", get, nodes, -o, wide]
+      changed_when: false

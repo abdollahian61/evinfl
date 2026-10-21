@@ -1,0 +1,136 @@
+---
+- name: Inspect supplied production certificate
+  ansible.builtin.stat:
+    path: "{{ haproxy_certificate_src | default(project_root ~ '/private/haproxy.pem') }}"
+  delegate_to: localhost
+  become: false
+  register: supplied_certificate
+- name: Require a real certificate or explicit test mode
+  ansible.builtin.assert:
+    that: supplied_certificate.stat.exists or (haproxy_allow_self_signed | default(false) | bool)
+    fail_msg: Place a fullchain+key PEM at private/haproxy.pem or explicitly enable haproxy_allow_self_signed for testing.
+- name: Install HAProxy
+  ansible.builtin.apt:
+    name: [haproxy, openssl, rsyslog]
+    state: present
+- name: Create certificate directory
+  ansible.builtin.file:
+    path: /etc/haproxy/certs
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+- name: Install supplied certificate
+  ansible.builtin.copy:
+    src: "{{ haproxy_certificate_src | default(project_root ~ '/private/haproxy.pem') }}"
+    dest: /etc/haproxy/certs/default.pem
+    owner: root
+    group: root
+    mode: '0600'
+  when: supplied_certificate.stat.exists
+  no_log: true
+  notify: Reload HAProxy
+- name: Create explicit temporary test certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -nodes
+      - -newkey
+      - rsa:2048
+      - -days
+      - '30'
+      - -keyout
+      - /etc/haproxy/certs/default.key
+      - -out
+      - /etc/haproxy/certs/default.crt
+      - -subj
+      - "/CN={{ app_domain | default('app.example.com') }}"
+      - -addext
+      - "subjectAltName=DNS:{{ app_domain | default('app.example.com') }}"
+    creates: /etc/haproxy/certs/default.key
+  when: not supplied_certificate.stat.exists
+- name: Combine temporary certificate and key
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    cat /etc/haproxy/certs/default.crt /etc/haproxy/certs/default.key > /etc/haproxy/certs/default.pem
+    chmod 600 /etc/haproxy/certs/default.key /etc/haproxy/certs/default.pem
+  args:
+    executable: /bin/bash
+    creates: /etc/haproxy/certs/default.pem
+  when: not supplied_certificate.stat.exists
+  notify: Reload HAProxy
+- name: Install validated HAProxy config
+  ansible.builtin.copy:
+    src: "{{ project_root }}/config/haproxy/haproxy.cfg"
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: /usr/sbin/haproxy -c -f %s
+  notify: Reload HAProxy
+- name: Start HAProxy
+  ansible.builtin.systemd_service:
+    name: haproxy
+    state: started
+    enabled: true
+- name: Create log directory on second disk
+  ansible.builtin.file:
+    path: /srv/haproxy/logs
+    state: directory
+    owner: syslog
+    group: adm
+    mode: '0750'
+- name: Send HAProxy logs to second disk
+  ansible.builtin.copy:
+    dest: /etc/rsyslog.d/40-evinfl-haproxy.conf
+    mode: '0644'
+    content: |
+      if ($programname == "haproxy") then {
+        action(type="omfile" file="/srv/haproxy/logs/haproxy.log" fileCreateMode="0640" fileOwner="syslog" fileGroup="adm")
+        stop
+      }
+  notify: Restart HAProxy logging
+- name: Configure log rotation
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/evinfl-haproxy
+    mode: '0644'
+    content: |
+      /srv/haproxy/logs/*.log {
+          daily
+          rotate 14
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0640 syslog adm
+          sharedscripts
+          postrotate
+              /usr/bin/systemctl kill -s HUP rsyslog.service >/dev/null 2>&1 || true
+          endscript
+      }
+- name: Start logging service
+  ansible.builtin.systemd_service:
+    name: rsyslog
+    state: started
+    enabled: true
+
+- name: Require data mount for log service
+  ansible.builtin.file:
+    path: /etc/systemd/system/rsyslog.service.d
+    state: directory
+    mode: '0755'
+- name: Configure log service mount dependency
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/rsyslog.service.d/20-evinfl-storage.conf
+    mode: '0644'
+    content: |
+      [Unit]
+      RequiresMountsFor=/srv/haproxy
+  notify: Restart HAProxy logging
+- name: Reload log service unit definitions
+  ansible.builtin.systemd_service:
+    daemon_reload: true
