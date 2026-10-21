@@ -1,39 +1,39 @@
-# نصب مرحله‌ای: Kubespray ← Helm ← Cilium
+# Step-by-Step Deployment: Kubespray → Helm → Cilium
 
-این مسیر مخصوص نصب تازه همین کلاستر است: یک Master و سه Worker روی Ubuntu 24.04. ابتدا فقط Kubernetes/containerd/etcd و منابع CoreDNS نصب می‌شوند؛ سپس Helm روی VM مدیریت و بعد Cilium با Helm. Traefik، NFS، مانیتورینگ و بکاپ در این مرحله نصب نمی‌شوند. این راهنما را از `monitoring01` با کاربر `devops` اجرا کنید، نه از هر چهار نود.
+This procedure targets a fresh cluster with one control-plane node and three workers running Ubuntu 24.04. Install Kubernetes, containerd, etcd, and CoreDNS resources first; install Helm on the management VM next; then install Cilium through Helm. Traefik, NFS, monitoring, and backup are not installed at this stage. Run these steps as `devops` on `monitoring01`, not separately on all four nodes.
 
-| نقش | نام | IP خصوصی |
+| Role | Hostname | Private IP |
 |---|---|---|
 | Master + etcd | k8s-master01 | 192.168.1.10 |
 | Worker | k8s-worker01 | 192.168.1.21 |
 | Worker | k8s-worker02 | 192.168.1.22 |
 | Worker | k8s-worker03 | 192.168.1.23 |
 
-نسخه ثابت این راهنما: Kubespray `v2.32.0`، Kubernetes `1.36.4`، Helm `3.22.0` و Cilium chart `1.20.3`. نسخه‌ها در [versions.env](../config/versions.env) هستند؛ برای اجرای قابل‌تکرار از `latest` استفاده نمی‌کنیم. Cilium 1.20 در مستندات رسمی Kubernetes 1.36 را پوشش می‌دهد.
+Pinned versions: Kubespray `v2.32.0`, Kubernetes `1.36.4`, Helm `3.22.0`, and Cilium chart `1.20.3`. Versions are defined in [versions.env](../config/versions.env); do not use `latest` for reproducible deployment. Cilium 1.20 officially supports Kubernetes 1.36.
 
-## ۱. دسترسی و آماده‌سازی
+## 1. Access and Prerequisites
 
-- روی چهار VM، Ubuntu 24.04 تازه با hostname یکتا و IP ثابت خصوصی لازم است. کاربر SSH باید کلید معتبر و `sudo` بدون رمز داشته باشد. fingerprint میزبان‌ها را از کنسول بررسی و هنگام اتصال SSH ثبت کنید.
-- این VMها نباید از قبل عضو RKE2، K3s یا کلاستر دیگری باشند. اجرای این راهنما روی نود نصب‌شده، روش مهاجرت یا تغییر CNI نیست.
-- همه نودها باید از Kerio به اینترنت، registryها و مخازن بسته دسترسی داشته باشند و DNS میزبان قبل از نصب کار کند. ساعت‌ها همگام باشند؛ کرنل استاندارد Ubuntu 24.04 برای این baseline مناسب است.
-- Pod CIDR برابر `10.244.0.0/16` و Service CIDR برابر `10.96.0.0/16` است؛ قبل از نصب عدم هم‌پوشانی با LAN و VPN را تأیید کنید. subnet mask شبکه VMها از روی این IPها فرض نشده است.
+- Each VM requires a fresh Ubuntu 24.04 installation, a unique hostname, and a static private IP. The SSH user must have a valid key and passwordless `sudo`. Verify SSH host fingerprints from the provider console before accepting them.
+- The VMs must not already belong to an RKE2, K3s, or other cluster. This guide is not a migration or CNI replacement procedure for existing nodes.
+- All nodes need outbound access through Kerio to package repositories and container registries, working host DNS, and synchronized clocks. The standard Ubuntu 24.04 kernel is suitable for this baseline.
+- Pod CIDR is `10.244.0.0/16` and Service CIDR is `10.96.0.0/16`. Confirm neither overlaps the LAN or VPN. Do not infer the VM subnet mask from the listed IP addresses.
 
-در فایروال آروان/میزبان، دسترسی‌های خصوصی زیر لازم‌اند؛ هیچ پورت مدیریتی به اینترنت باز نشود:
+Allow these private connections through ArvanCloud and host firewalls. Do not expose management ports to the public internet.
 
-| ارتباط | پورت |
+| Connection | Port |
 |---|---|
-| مدیریت/VPN به نودها | TCP 22 |
-| مدیریت و چهار نود به Master | TCP 6443 |
-| Master به kubelet نودها | TCP 10250 |
-| etcd روی Master | TCP 2379/2380 در محدوده لازم داخلی؛ بدون دسترسی عمومی |
-| چهار نود به یکدیگر، VXLAN | UDP 8472 |
-| چهار نود به یکدیگر، health | TCP 4240 و ICMP |
-| نودهای کلاستر برای Hubble | TCP 4244 |
-| خروج نودها | DNS تنظیم‌شده، NTP و HTTPS به مخازن/registryها از Kerio |
+| Management/VPN to nodes | TCP 22 |
+| Management and all four nodes to master | TCP 6443 |
+| Master to node kubelets | TCP 10250 |
+| etcd on master | TCP 2379/2380, restricted to necessary private peers |
+| Inter-node VXLAN | UDP 8472 |
+| Inter-node health | TCP 4240 and ICMP |
+| Cluster nodes for Hubble | TCP 4244 |
+| Node egress | Configured DNS, NTP, and HTTPS to registries/repositories via Kerio |
 
-این فقط ماتریس ارتباط زیرساختی است؛ دسترسی Podها و Serviceها طبق سیاست داخلی کلاستر نیز باید برقرار باشد. فعلاً NodePort عمومی باز نمی‌کنیم. route، NIC، port security آروان و netplan توسط این فایل‌ها عوض نمی‌شوند. اگر UFW فعال است، قواعد forwarding/ترافیک Pod و نودها را هم بررسی کنید؛ حذف کورکورانه قوانین فایروال توصیه نمی‌شود.
+This is an infrastructure connectivity matrix, not a complete Pod/Service policy. Do not open public NodePorts yet. These files do not modify routes, NICs, ArvanCloud port security, or netplan. If UFW is enabled, inspect Pod forwarding and node traffic rules rather than disabling firewall protection indiscriminately.
 
-روی ماشین مدیریت:
+On the management host:
 
 ```bash
 sudo apt-get update
@@ -52,13 +52,13 @@ export ANSIBLE_HOST_KEY_CHECKING=True
 export ANSIBLE_SSH_ARGS='-o ControlMaster=auto -o ControlPersist=60s -o ConnectionAttempts=10'
 ```
 
-اگر repo را قبلاً دارید، به پوشه همان checkout بروید و پس از بررسی تغییرات محلی `git pull --ff-only` کنید؛ دوباره clone لازم نیست. در `site.env` مقدار `SSH_USER` و مسیر `SSH_KEY` را واقعی کنید. حالت `--ansible-only` فقط پیش‌نیازهای Controller، Ansible و Kubespray ثابت را نصب می‌کند؛ Helm و kubectl را در این مرحله نصب نمی‌کند. این مسیر به secrets سرویس‌های MinIO و دیتابیس نیاز ندارد. با باز کردن ترمینال جدید، source و exportهای بالا را دوباره اجرا کنید.
+For an existing checkout, inspect local changes and run `git pull --ff-only`; do not clone again. Set the real `SSH_USER` and `SSH_KEY` in `site.env`. The `--ansible-only` mode installs controller prerequisites and pinned Ansible/Kubespray, but not Helm or kubectl. MinIO and database secrets are unnecessary for this stage. Re-source the environment and repeat the exports in new terminals.
 
-اگر می‌خواهید دیسک دوم ۵۰GB Workerها برای containerd/kubelet استفاده شود، پیش از نصب کلاستر، [Playbookهای آماده‌سازی چهار VM](../vms/README.md) را اجرا کنید. ابتدا `lsblk -f` و خالی بودن `/dev/sdb` را بررسی کنید. برای دیسک خالی، Role فقط با فلگ صریح `-e data_disk_allow_format=true` فرمت می‌کند. اگر این آماده‌سازی را انجام ندهید، Kubespray از مسیر استاندارد `/var/lib/containerd` و دیسک OS استفاده می‌کند؛ خودبه‌خود sdb را به آن منتقل نمی‌کند.
+To place worker containerd/kubelet data on the second 50 GB disk, run the [four-VM preparation playbooks](../vms/README.md) before deploying Kubernetes. Confirm `/dev/sdb` is empty with `lsblk -f`. Formatting requires the explicit `-e data_disk_allow_format=true` flag. Otherwise Kubespray uses the standard `/var/lib/containerd` location on the OS disk; it will not migrate data to sdb automatically.
 
-## ۲. Inventory ساده
+## 2. Minimal Inventory
 
-فقط [inventory/minimal/hosts.ini](../inventory/minimal/hosts.ini) را ویرایش کنید. همین فایل برای یک Master و سه Worker آماده است:
+Edit only [inventory/minimal/hosts.ini](../inventory/minimal/hosts.ini):
 
 ```ini
 [kube_control_plane]
@@ -77,7 +77,7 @@ kube_control_plane
 kube_node
 ```
 
-تنظیمات لازم از [group_vars/k8s_cluster.yml](../inventory/minimal/group_vars/k8s_cluster.yml) کنار همین Inventory خودکار خوانده می‌شوند. بخش تعیین‌کننده آن:
+Settings load automatically from the adjacent [group_vars/k8s_cluster.yml](../inventory/minimal/group_vars/k8s_cluster.yml). Key settings:
 
 ```yaml
 kube_network_plugin: cni
@@ -88,11 +88,11 @@ enable_nodelocaldns: false
 resolvconf_mode: none
 ```
 
-`cni` در این نسخه Kubespray فقط binaryهای عمومی CNI را کپی می‌کند و شبکه Pod را راه نمی‌اندازد. `kube_proxy_remove` باعث می‌شود kube-proxy از ابتدا نصب نشود. `helm_enabled: false` و غیرفعال بودن CSR approver جلوی نصب Helm/چارت آن در مرحله اول را می‌گیرند. DNS میزبان حفظ می‌شود تا دانلود imageهای Cilium به شبکه‌ای که هنوز نصب نشده وابسته نباشد. از همین مسیر `inventory/minimal/hosts.ini` استفاده کنید؛ `inventory/hosts.ini` پروفایل قبلی با افزونه‌های بیشتری است.
+In this Kubespray version, `cni` copies generic CNI binaries but does not establish Pod networking. `kube_proxy_remove` prevents kube-proxy installation. Disabling Helm and the CSR approver keeps them out of stage one. Host DNS remains intact for pulling Cilium images. Use `inventory/minimal/hosts.ini`; `inventory/hosts.ini` is the earlier, more extensive profile.
 
-اگر IP Master را تغییر می‌دهید، علاوه بر Inventory، مقدار `kube_apiserver_bind_address` و `supplementary_addresses_in_ssl_keys` در group_vars و `k8sServiceHost` در values مربوط به Cilium را هم تغییر دهید.
+If the master IP changes, update the inventory plus `kube_apiserver_bind_address`, `supplementary_addresses_in_ssl_keys` in group_vars, and `k8sServiceHost` in Cilium values.
 
-پیش از نصب، اتصال SSH/Python و sudo را کنترل کنید:
+Verify SSH, Python, and sudo:
 
 ```bash
 ansible -i inventory/minimal/hosts.ini k8s_cluster \
@@ -101,11 +101,11 @@ ansible -i inventory/minimal/hosts.ini k8s_cluster \
   -u "$SSH_USER" --private-key "$SSH_KEY" -b -m ansible.builtin.command -a 'id -u'
 ```
 
-دستور اول باید برای چهار نود `pong` و دستور دوم عدد `0` بدهد. خطاهای DNS، SSH، sudo یا دانلود را قبل از ادامه رفع کنید.
+All four nodes must return `pong` and then `0`. Resolve DNS, SSH, sudo, or download failures before proceeding.
 
-## ۳. نصب کلاستر با cluster.yaml
+## 3. Deploy Kubernetes with cluster.yaml
 
-فایل [cluster.yaml](../cluster.yaml) در ریشه پروژه، Playbook رسمی همان checkout ثابت Kubespray را import می‌کند. ابتدا بررسی syntax:
+The root [cluster.yaml](../cluster.yaml) imports the official Kubespray playbook from the pinned checkout. Check syntax first:
 
 ```bash
 ansible-playbook -i inventory/minimal/hosts.ini \
@@ -113,7 +113,7 @@ ansible-playbook -i inventory/minimal/hosts.ini \
   cluster.yaml --syntax-check
 ```
 
-سپس نصب واقعی:
+Deploy:
 
 ```bash
 ansible-playbook -i inventory/minimal/hosts.ini \
@@ -121,7 +121,7 @@ ansible-playbook -i inventory/minimal/hosts.ini \
   cluster.yaml
 ```
 
-در پایان `failed=0` و `unreachable=0` برای نودها لازم است. در صورت قطع شدن دانلود، علت را رفع و همان فرمان را دوباره اجرا کنید؛ حذف کلاستر یا reset قدم اول رفع مشکل نیست. پس از موفقیت، خروجی kubectl و kubeconfig در `inventory/minimal/artifacts/` ایجاد می‌شود. معماری Controller و نودها در این روش دریافت kubectl باید یکسان باشد؛ طرح فعلی VMها amd64 است.
+Expect `failed=0` and `unreachable=0`. If downloads fail, fix the cause and rerun the command; cluster reset is not the first troubleshooting step. Successful installation writes kubectl and kubeconfig artifacts to `inventory/minimal/artifacts/`. Controller and node architectures must match for this kubectl retrieval approach; the planned VMs use amd64.
 
 ```bash
 mkdir -p .tools/bin private
@@ -134,11 +134,11 @@ kubectl get nodes -o wide
 kubectl -n kube-system get pods,daemonsets
 ```
 
-API باید `ok` بدهد. تا قبل از Cilium، `NotReady` بودن نودها و `Pending` بودن CoreDNS طبیعی است؛ static Podهای API/etcd به شبکه Pod وابسته نیستند. نباید DaemonSet مربوط به Calico، Flannel، Cilium یا kube-proxy وجود داشته باشد. فایل‌های artifacts و private را وارد Git نکنید؛ kubeconfig دسترسی مدیریتی دارد. اگر نودها از قبل Ready یا CNI دیگری موجود است، قبل از نصب Cilium منشأ آن را بررسی کنید.
+The API should return `ok`. Before Cilium, `NotReady` nodes and `Pending` CoreDNS are expected; API/etcd static Pods do not require Pod networking. No Calico, Flannel, Cilium, or kube-proxy DaemonSet should exist. Never commit artifacts or private kubeconfig files. If nodes are already Ready or another CNI exists, investigate before installing Cilium.
 
-### تأیید اولیه گواهی kubelet
+### Initial Kubelet Serving Certificate Approval
 
-در این پروفایل، گواهی serving kubelet باید با CA کلاستر معتبر باشد و approver خودکار نصب نشده است. پیش از فرمان‌های `exec` و `logs` مراحل بعد، درخواست‌های اولیه چهار نود را بررسی کنید:
+This profile requires kubelet serving certificates signed by the cluster CA; no automatic approver is installed. Inspect the four nodes' initial requests before using later `exec` or `logs` commands:
 
 ```bash
 kubectl get csr
@@ -147,18 +147,18 @@ kubectl get csr REPLACE_WITH_CSR_NAME -o jsonpath='{.spec.request}' \
   | base64 --decode | openssl req -noout -text
 ```
 
-نام `REPLACE_WITH_CSR_NAME` را با نام واقعی همان درخواست جایگزین کنید. فقط درخواست دارای signer برابر `kubernetes.io/kubelet-serving`، هویت `system:node:NAME` متعلق به یکی از چهار نود خودتان، CN/O سازگار و SAN/IPهای معتبر همان نود را تأیید کنید. برای هر درخواست بررسی‌شده جداگانه:
+Replace the placeholder with the actual request name. Approve only requests with signer `kubernetes.io/kubelet-serving`, a `system:node:NAME` identity belonging to one of your four nodes, matching CN/O, and valid node SANs/IPs. Approve each verified request individually:
 
 ```bash
 kubectl certificate approve REPLACE_WITH_CSR_NAME
 kubectl get csr
 ```
 
-وضعیت باید `Approved,Issued` شود. همه CSRها را یک‌جا approve نکنید؛ اگر درخواست وجود ندارد، وضعیت kubelet/CSR را بررسی کنید. تأیید گواهی باعث Ready شدن شبکه نمی‌شود؛ Ready شدن نودها هنوز به Cilium وابسته است. درخواست‌های تمدید بعدی هم نیازمند بررسی یا یک approver محدود و معتبر هستند.
+Status should become `Approved,Issued`. Never approve all CSRs blindly. If none exist, inspect kubelet and CSR state. Certificate approval does not make nodes Ready; Cilium is still required. Future renewals also require review or a suitably restricted approver.
 
-## ۴. حالا Helm را نصب کنید
+## 4. Install Helm
 
-فقط روی ماشین مدیریت:
+On the management host only:
 
 ```bash
 bash scripts/install-helm.sh
@@ -167,30 +167,30 @@ helm version --short
 helm list -A
 ```
 
-این اسکریپت binary نسخه ثابت Helm را از منبع رسمی می‌گیرد، checksum را بررسی می‌کند و در `.tools/bin/helm` قرار می‌دهد. Helm کلاینت است؛ روی تک‌تک Workerها یا داخل کلاستر سرویس جداگانه‌ای نصب نمی‌کند. `helm list -A` قبل از نصب Cilium باید اجرا شود حتی اگر هنوز Pod network آماده نیست.
+The script downloads the pinned Helm binary from the official source, verifies its checksum, and installs it at `.tools/bin/helm`. Helm is a client, not a separate service on each worker or inside the cluster. Run `helm list -A` before Cilium even if Pod networking is not yet ready.
 
-## ۵. تنظیمات Cilium مناسب این معماری
+## 5. Cilium Settings for This Architecture
 
-فایل کامل و قابل‌ویرایش: [config/helm/cilium.yaml](../config/helm/cilium.yaml). این یک baseline برای همین کلاستر کوچک روی شبکه خصوصی ابر است؛ بهترین مقدار memory/MTU به بار واقعی و شبکه بستگی دارد.
+Editable values: [config/helm/cilium.yaml](../config/helm/cilium.yaml). This is a baseline for a small cluster on a private cloud network. Optimal memory and MTU depend on actual load and networking.
 
-| تنظیم | مقدار/دلیل |
+| Setting | Value / Reason |
 |---|---|
-| kubeProxyReplacement | فعال؛ کلاستر از ابتدا kube-proxy ندارد |
-| k8sServiceHost / Port | `192.168.1.10:6443`؛ bootstrap از API مستقیم |
-| IPAM | Kubernetes؛ برای هر نود از Pod CIDR تعریف‌شده، subnet اختصاص می‌یابد |
-| routing | VXLAN؛ بدون نیاز به route جدا برای Pod CIDR هر نود در آروان |
-| MTU | تشخیص خودکار؛ پس از نصب عبور بسته بزرگ باید تست شود |
-| masquerade | eBPF؛ سپس خروج اینترنت از gateway موجود Kerio |
-| LoadBalancer mode | SNAT؛ بدون نیاز به طراحی مسیر برگشت DSR |
-| Operator | دو replica با anti-affinity پیش‌فرض چارت و PDB با maxUnavailable=1 |
-| منابع | requests مشخص و سقف حافظه اولیه؛ CPU limit تنظیم نشده است |
-| Hubble | Relay و UI فعال، سرویس‌های خصوصی؛ UI با port-forward |
-| Gateway/Ingress داخلی Cilium | خاموش؛ بعداً Traefik کنترلر Gateway API خواهد بود |
-| imageها | digestهای پیش‌فرض همان چارت ثابت حفظ می‌شوند |
+| kubeProxyReplacement | Enabled; kube-proxy is absent from the outset |
+| k8sServiceHost / Port | `192.168.1.10:6443`; direct API bootstrap |
+| IPAM | Kubernetes; node-specific subnets from configured Pod CIDR |
+| Routing | VXLAN; no per-node Pod CIDR routes required in ArvanCloud |
+| MTU | Auto-detected; test large packets after deployment |
+| Masquerade | eBPF, then internet egress through existing Kerio gateway |
+| LoadBalancer mode | SNAT; no DSR return-path design required |
+| Operator | Two replicas, chart-default anti-affinity and PDB maxUnavailable=1 |
+| Resources | Explicit requests and initial memory limits; no CPU limit |
+| Hubble | Relay and UI enabled as private services; access through port-forward |
+| Cilium Gateway/Ingress | Disabled; Traefik will manage Gateway API later |
+| Images | Retain default image digests from the pinned chart |
 
-سقف حافظه Agent فعلاً 1GiB و Operator برابر 512MiB است؛ OOM/restart، تعداد endpoint و policyها را پایش و با افزایش بار اصلاح کنید. دو Operator، خرابی تک Master/etcd را جبران نمی‌کنند. VXLAN رمزنگاری نیست؛ WireGuard و host firewall بدون سنجش مسیر، MTU و نیاز عملیاتی در این baseline فعال نشده‌اند. Prometheus ServiceMonitor هم تا زمان نصب CRDهای آن فعال نشده است.
+Initial memory limits are 1 GiB for agents and 512 MiB for operators. Monitor OOMs, restarts, endpoint counts, and policies, then tune under load. Two operators do not protect against a single master/etcd failure. VXLAN is not encryption. WireGuard and host firewall are not enabled in this baseline without testing routing, MTU, and requirements. Prometheus ServiceMonitor is disabled until its CRDs are installed.
 
-نصب با Helm:
+Install using Helm:
 
 ```bash
 source config/versions.env
@@ -204,9 +204,9 @@ helm upgrade --install cilium cilium/cilium \
   -f config/helm/cilium.yaml --wait --timeout 15m
 ```
 
-`helm template` ساختار و templateها را بررسی می‌کند؛ تست شبکه یا admission واقعی نیست. این فرمان نصب برای پروفایل مینیمال است؛ اجرای `install-addons.sh all` ابزارهای مراحل بعد را هم نصب می‌کند و در این مرحله لازم نیست.
+`helm template` checks rendering, not actual networking or admission. This installation is for the minimal profile; `install-addons.sh all` deploys later components and is not required here.
 
-## ۶. کنترل Ready شدن
+## 6. Verify Node Readiness
 
 ```bash
 kubectl -n kube-system rollout status daemonset/cilium --timeout=600s
@@ -219,7 +219,7 @@ kubectl -n kube-system exec daemonset/cilium -- cilium-dbg status --verbose
 kubectl -n kube-system exec daemonset/cilium -- cilium-health status --verbose
 ```
 
-چهار نود باید Ready و Agent روی هر چهار نود حاضر باشد. دو Operator باید روی دو نود متفاوت اجرا شوند؛ وضعیت kube-proxy replacement باید فعال باشد. این دو فرمان exec وضعیت یک Agent را نشان می‌دهند؛ برای بررسی همه Agentها:
+All four nodes should be Ready with an agent on each. The two operators should run on different nodes; kube-proxy replacement must be enabled. The `exec` commands inspect one agent; check all agents with:
 
 ```bash
 for pod in $(kubectl -n kube-system get pods -l k8s-app=cilium -o name); do
@@ -227,7 +227,7 @@ for pod in $(kubectl -n kube-system get pods -l k8s-app=cilium -o name); do
 done
 ```
 
-## ۷. تست واقعی Pod، Service و DNS
+## 7. Test Pod, Service, and DNS Connectivity
 
 ```bash
 kubectl apply -f manifests/cilium-smoke.yaml
@@ -238,7 +238,7 @@ kubectl -n cilium-smoke exec deployment/client -- nslookup kubernetes.default.sv
 kubectl -n cilium-smoke exec deployment/client -- wget -qO- http://echo:8080/
 ```
 
-باید سه Pod سرویس echo روی سه Worker و یک client داشته باشید. پاسخ HTTP نام یک Pod است. برای تست مستقیم IP همه سرورها، شامل نودهای دیگر:
+Expect three echo Pods on the workers and one client. HTTP responses identify the serving Pod. Test direct Pod IP access, including across nodes:
 
 ```bash
 for pod_ip in $(kubectl -n cilium-smoke get pods -l app=cilium-smoke-echo -o jsonpath='{.items[*].status.podIP}'); do
@@ -246,21 +246,21 @@ for pod_ip in $(kubectl -n cilium-smoke get pods -l app=cilium-smoke-echo -o jso
 done
 ```
 
-هر سه IP باید پاسخ بدهند. اگر خروج اینترنت Pod هم لازم است، با wget/curl image مورداعتماد خودتان HTTPS یک مقصد مجاز را تست کنید. BusyBox این smoke test برای تست HTTP داخلی انتخاب شده است؛ وجود CA و قابلیت HTTPS آن معیار مستقل قبولی شبکه نیست. این آزمایش کوچک کارایی/MTU یا تمام NetworkPolicyها را اثبات نمی‌کند؛ برای پذیرش عملیاتی، تست connectivity کامل Cilium و اندازه بسته متناسب با MTU آروان را هم اجرا کنید. namespace تست را بعد از اتمام پاک کنید:
+All three IPs must respond. If Pod internet egress is required, use a trusted image with wget/curl to test HTTPS to an approved destination. The BusyBox smoke-test image is intended for internal HTTP; its CA store and HTTPS behavior are not independent proof of network readiness. This smoke test does not establish performance, MTU, or all NetworkPolicy behavior. Run the full Cilium connectivity suite and packet-size tests suitable for ArvanCloud before production acceptance. Remove the test namespace afterward:
 
 ```bash
 kubectl delete namespace cilium-smoke
 ```
 
-Hubble UI از ترمینال دیگری روی Controller:
+From another terminal on the controller, expose Hubble UI locally:
 
 ```bash
 kubectl -n kube-system port-forward --address 127.0.0.1 service/hubble-ui 12000:80
 ```
 
-روی مرورگر همان ماشین به `http://127.0.0.1:12000` بروید؛ اگر Controller ماشین راه دور است، از کامپیوتر خودتان تونل SSH بدهید: `ssh -L 12000:127.0.0.1:12000 devops@192.168.1.30`. UI عمومی یا بدون کنترل دسترسی منتشر نشده است.
+Open `http://127.0.0.1:12000` on that host. For a remote controller, create an SSH tunnel from your workstation: `ssh -L 12000:127.0.0.1:12000 devops@192.168.1.30`. The UI is not publicly exposed.
 
-## ۸. اگر نصب گیر کرد
+## 8. Troubleshooting
 
 ```bash
 kubectl -n kube-system get pods -o wide
@@ -270,29 +270,29 @@ kubectl -n kube-system logs deployment/cilium-operator --tail=100
 kubectl get nodes -o custom-columns=NAME:.metadata.name,PODCIDR:.spec.podCIDR
 ```
 
-| نشانه | بررسی اول |
+| Symptom | First Check |
 |---|---|
-| ImagePullBackOff | DNS و خروج اینترنت همان نود از Kerio، دسترسی registry |
-| Agent به API وصل نمی‌شود | `.10:6443`، route، firewall و k8sServiceHost |
-| PodCIDR خالی | allocate-node-cidrs و Pod CIDR در controller-manager |
-| ارتباط بین نودها خراب است | UDP8472، MTU، فایروال و port security شبکه |
-| DNS Pod خراب است | CoreDNS Ready، ClusterIP kube-dns و مسیر Service |
-| Operator Pending | ظرفیت و anti-affinity؛ باید دو نود قابل‌زمان‌بندی برای Operator باشند |
-| OOMKilled | مصرف واقعی و limit Agent/Operator؛ بعد از اندازه‌گیری values را تغییر دهید |
+| ImagePullBackOff | Node DNS, registry reachability, and egress via Kerio |
+| Agent cannot reach API | `.10:6443`, routes, firewall, and k8sServiceHost |
+| Empty PodCIDR | allocate-node-cidrs and controller-manager Pod CIDR |
+| Broken inter-node traffic | UDP 8472, MTU, firewall, cloud port security |
+| Broken Pod DNS | CoreDNS readiness, kube-dns ClusterIP, Service routing |
+| Operator Pending | Capacity and anti-affinity; two schedulable nodes required |
+| OOMKilled | Actual memory usage and agent/operator limits; tune after measuring |
 
-`helm uninstall cilium` راه رفع عمومی خطا نیست؛ حذف CNI روی ارتباط workloadها اثر مستقیم دارد. تغییر هر بار values را با نسخه ثابت چارت و `helm upgrade` انجام دهید. پس از Cilium، برای upgrade آینده Kubernetes همین Inventory مینیمال و الگوی CNI خارجی را حفظ کنید؛ Kubespray را ناخواسته روی `kube_network_plugin: cilium` تغییر ندهید، چون ownership نصب باید همچنان با Helm بماند.
+`helm uninstall cilium` is not a general troubleshooting fix: removing the CNI immediately affects workloads. Modify values using the pinned chart and `helm upgrade`. Preserve the minimal inventory and externally managed CNI during future Kubernetes upgrades. Do not inadvertently change Kubespray to `kube_network_plugin: cilium`; Helm must remain the owner.
 
-این پروفایل CSR approver را نصب نکرده است. تأیید اولیه serving CSRها در مرحله ۳ انجام می‌شود؛ برای تمدید بعدی و پیش از Metrics Server، فرایند بررسی CSRها یا approver محدود و معتبر را برقرار نگه دارید. از approve خودکار همه CSRها و `--kubelet-insecure-tls` به عنوان تنظیم دائمی استفاده نکنید. سرویس‌های مراحل بعد و مدیریت CSR در [راهنمای کامل زیرساخت](install-a-to-z.md) توضیح داده شده‌اند؛ تا این مرحله نصب خودکار آن‌ها انجام نشده است.
+This profile does not install a CSR approver. Initial serving CSRs are approved in step 3. Establish ongoing CSR review or a restricted, trusted approver before installing Metrics Server. Never permanently enable blanket CSR approval or `--kubelet-insecure-tls`. Later services and CSR management are covered in the [full infrastructure runbook](install-a-to-z.md), but are not installed at this stage.
 
-## منابع و وضعیت بررسی
+## References and Validation Status
 
 - [Kubespray v2.32.0](https://github.com/kubernetes-sigs/kubespray/releases/tag/v2.32.0)
-- [حالت generic CNI در tag انتخابی](https://github.com/kubernetes-sigs/kubespray/blob/v2.32.0/roles/network_plugin/cni/tasks/main.yml)
-- [kube-proxy skip در Kubespray](https://github.com/kubernetes-sigs/kubespray/blob/v2.32.0/roles/kubespray_defaults/defaults/main/main.yml)
+- [Generic CNI tasks in the selected tag](https://github.com/kubernetes-sigs/kubespray/blob/v2.32.0/roles/network_plugin/cni/tasks/main.yml)
+- [Kubespray kube-proxy skip defaults](https://github.com/kubernetes-sigs/kubespray/blob/v2.32.0/roles/kubespray_defaults/defaults/main/main.yml)
 - [Cilium Helm installation](https://docs.cilium.io/en/stable/installation/k8s-install-helm/)
 - [Cilium kube-proxy replacement](https://docs.cilium.io/en/stable/network/kubernetes/kubeproxy-free/)
-- [سازگاری Kubernetes](https://docs.cilium.io/en/stable/network/kubernetes/compatibility/)
-- [پیش‌نیازها و پورت‌های Cilium](https://docs.cilium.io/en/stable/operations/system_requirements/)
-- [نصب رسمی Helm](https://helm.sh/docs/v3/intro/install/)
+- [Kubernetes compatibility](https://docs.cilium.io/en/stable/network/kubernetes/compatibility/)
+- [Cilium requirements and ports](https://docs.cilium.io/en/stable/operations/system_requirements/)
+- [Official Helm installation](https://helm.sh/docs/v3/intro/install/)
 
-بررسی محلی شامل YAML/Bash، بارگذاری Inventory مینیمال، syntax ورودی cluster.yaml با Kubespray ثابت و رندر Cilium است. نصب روی VMهای شما و تست شبکه واقعی اجرا نشده‌اند.
+Local validation covered YAML/Bash, minimal inventory loading, cluster.yaml syntax against pinned Kubespray, and Cilium rendering. The deployment has not been executed on your VMs and actual network tests have not been run.
