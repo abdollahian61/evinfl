@@ -1,8 +1,7 @@
+# Self-hosted GitLab runner tag: evinfl-infra
 stages: [validate, plan, provision, inventory, bootstrap, kubernetes, cilium, addons, verify]
-
 default:
   tags: [evinfl-infra]
-
 variables:
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
@@ -14,9 +13,8 @@ validate:
     - pip install ansible==12.3.0 PyYAML==6.0.3 netaddr==1.3.0
     - python scripts/validate.py --ansible
 
-# The deployment jobs are intentionally disabled until the Arvan provider,
-# remote Terraform backend, credentials and private runner connectivity are verified.
-# Do not mistake this scaffold for a deployable production pipeline.
+# Provision is disabled until a verified Arvan provider implementation is added.
+# Never run an unverified plan against production.
 terraform_plan:
   stage: plan
   image: hashicorp/terraform:1.10.5
@@ -33,41 +31,70 @@ terraform_apply:
   stage: provision
   resource_group: arvan-production
   script:
-    - echo "BLOCKED - configure Arvan provider and shared remote state first"
+    - echo "BLOCKED - Arvan provider, remote backend and plan/apply need implementation"
     - exit 1
   rules:
     - when: manual
       allow_failure: true
 
+# This job reads the authoritative remote state and passes only Terraform's
+# nodes output forward. Its backend config must match the apply job exactly.
+export_nodes:
+  stage: inventory
+  image: hashicorp/terraform:1.10.5
+  script:
+    - test -n "$TF_STATE_ADDRESS"
+    - test -n "$TF_HTTP_USERNAME"
+    - test -n "$TF_HTTP_PASSWORD"
+    - cd terraform
+    - terraform init -reconfigure -backend-config="address=$TF_STATE_ADDRESS" -backend-config="lock_address=$TF_STATE_ADDRESS/lock" -backend-config="unlock_address=$TF_STATE_ADDRESS/lock" -backend-config="username=$TF_HTTP_USERNAME" -backend-config="password=$TF_HTTP_PASSWORD" -backend-config="lock_method=POST" -backend-config="unlock_method=DELETE"
+    - terraform output -json nodes > ../terraform-outputs-value.json
+    - cd ..
+    - python3 -c 'import json; x=json.load(open("terraform-outputs-value.json")); json.dump({"nodes":{"value":x}},open("terraform-outputs.json","w"))'
+  artifacts:
+    paths: [terraform-outputs.json]
+    expire_in: 1 hour
+  rules:
+    - exists: [terraform/main.tf]
+      when: manual
+
 generate_inventory:
   stage: inventory
   image: python:3.12-slim
+  needs:
+    - job: export_nodes
+      artifacts: true
   script:
     - python scripts/generate-inventory.py --input terraform-outputs.json --output inventory/generated/hosts.ini
   artifacts:
     paths: [inventory/generated/hosts.ini]
     expire_in: 1 day
   rules:
-    - when: manual
-      allow_failure: true
+    - exists: [terraform/main.tf]
+      when: on_success
 
 bootstrap:
   stage: bootstrap
+  needs:
+    - job: generate_inventory
+      artifacts: true
   script:
-    - test -f inventory/generated/hosts.ini
     - ansible -i inventory/generated/hosts.ini all -m ping -u "$ANSIBLE_USER"
   rules:
-    - when: manual
-      allow_failure: true
+    - exists: [terraform/main.tf]
+      when: manual
 
 kubernetes_install:
   stage: kubernetes
+  needs:
+    - job: generate_inventory
+      artifacts: true
   script:
     - test -n "$KUBESPRAY_DIR"
     - ansible-playbook -i inventory/generated/hosts.ini "$KUBESPRAY_DIR/cluster.yml" -b -u "$ANSIBLE_USER"
   rules:
-    - when: manual
-      allow_failure: true
+    - exists: [terraform/main.tf]
+      when: manual
 
 cilium_install:
   stage: cilium
@@ -80,7 +107,8 @@ cilium_install:
 addons:
   stage: addons
   script:
-    - echo "Configure pinned add-on charts and approval gates before deployment"
+    - echo "Blocked pending pinned add-on configuration and approval"
+    - exit 1
   rules:
     - when: manual
       allow_failure: true
